@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Raja Mantri Chor Sipahi</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <canvas id="confetti-canvas"></canvas>
+    <div id="particles"></div>
+
+    <div id="app">
+        <!-- Home Screen -->
+        <div id="home-screen" class="screen active">
+            <div class="title-container">
+                <h1 class="bounce-title">
+                    <span class="letter" style="--i:0">R</span><span class="letter" style="--i:1">a</span><span class="letter" style="--i:2">j</span><span class="letter" style="--i:3">a</span><span class="letter space" style="--i:4">&nbsp;</span><span class="letter" style="--i:5">M</span><span class="letter" style="--i:6">a</span><span class="letter" style="--i:7">n</span><span class="letter" style="--i:8">t</span><span class="letter" style="--i:9">r</span><span class="letter" style="--i:10">i</span><span class="letter space" style="--i:11">&nbsp;</span><span class="letter" style="--i:12">C</span><span class="letter" style="--i:13">h</span><span class="letter" style="--i:14">o</span><span class="letter" style="--i:15">r</span><span class="letter space" style="--i:16">&nbsp;</span><span class="letter" style="--i:17">S</span><span class="letter" style="--i:18">i</span><span class="letter" style="--i:19">p</span><span class="letter" style="--i:20">a</span><span class="letter" style="--i:21">h</span><span class="letter" style="--i:22">i</span>
+                </h1>
+                <div class="floating-icons">
+                    <span class="float-icon" style="--delay:0s; --x:-60px">&#128081;</span>
+                    <span class="float-icon" style="--delay:1s; --x:60px">&#129332;</span>
+                    <span class="float-icon" style="--delay:2s; --x:-40px">&#128110;</span>
+                    <span class="float-icon" style="--delay:3s; --x:40px">&#128018;</span>
+                </div>
+            </div>
+            <p class="subtitle wiggle">Multiplayer Fun on Any Device!</p>
+
+            <div class="home-actions">
+                <div class="input-group">
+                    <span class="input-icon">&#128100;</span>
+                    <input type="text" id="player-name" placeholder="Your Name" maxlength="15">
+                </div>
+                <button id="create-btn" class="btn primary pulse-btn">&#127881; Create Room</button>
+                <div class="divider"><span>OR</span></div>
+                <div class="input-group">
+                    <span class="input-icon">&#128273;</span>
+                    <input type="text" id="room-code" placeholder="Room Code" maxlength="6" style="text-transform:uppercase">
+                </div>
+                <button id="join-btn" class="btn secondary">&#128279; Join Room</button>
+            </div>
+            <p id="home-error" class="error-text" style="display:none"></p>
+        </div>
+
+        <!-- Room Settings (Host only) -->
+        <div id="settings-screen" class="screen">
+            <h2>&#9881; Room Settings</h2>
+            <div class="settings-box">
+                <label class="rounds-label">
+                    &#127920; Number of Rounds:
+                    <input type="number" id="total-rounds" value="5" min="1" max="20">
+                </label>
+                <button id="create-confirm-btn" class="btn primary">&#10004; Create Room</button>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <h2>&#127968; Game Lobby</h2>
+            <div class="room-code-display">
+                <p>Share this code:</p>
+                <div class="code-box" id="display-code"></div>
+                <p class="hint">Everyone opens this same page &amp; joins with the code!</p>
+            </div>
+            <div class="player-list" id="player-list"></div>
+            <div class="lobby-status" id="lobby-status">Waiting for players... (need 4)</div>
+            <button id="start-game-btn" class="btn primary pulse-btn hidden">&#127922; Start Game!</button>
+        </div>
+
+        <!-- Waiting Screen -->
+        <div id="waiting-screen" class="screen">
+            <h2 id="waiting-title">Waiting...</h2>
+            <div class="waiting-animation">
+                <div class="spinner"></div>
+            </div>
+            <p id="waiting-message" class="hint"></p>
+        </div>
+
+        <!-- Role Reveal Screen -->
+        <div id="reveal-screen" class="screen">
+            <div class="round-badge">Round <span id="round-number"></span></div>
+            <h2>Your Secret Role</h2>
+            <p class="hint">&#128064; Don't show anyone!</p>
+            <div id="role-card" class="role-card hidden">
+                <div class="card-sparkles">
+                    <span class="sparkle">&#10024;</span>
+                    <span class="sparkle">&#10024;</span>
+                    <span class="sparkle">&#10024;</span>
+                    <span class="sparkle">&#10024;</span>
+                </div>
+                <div class="role-icon" id="role-icon"></div>
+                <div class="role-name" id="role-name"></div>
+                <div class="role-points" id="role-points"></div>
+            </div>
+            <button id="reveal-btn" class="btn wobble-hover">&#128065; Tap to See Your Role!</button>
+            <button id="reveal-done-btn" class="btn primary hidden">&#9989; I've Seen It!</button>
+        </div>
+
+        <!-- Raja Announce Screen -->
+        <div id="raja-screen" class="screen">
+            <h2 class="announce-text">&#128276; Hear Ye, Hear Ye! &#128276;</h2>
+            <div class="raja-announce">
+                <div class="crown-animation">
+                    <span class="big-crown">&#128081;</span>
+                </div>
+                <p class="raja-reveal-text"><strong id="raja-name"></strong> is the RAJA!</p>
+                <p class="raja-sub">All bow to the King!</p>
+            </div>
+            <p id="raja-waiting" class="hint"></p>
+        </div>
+
+        <!-- Mantri Guess Screen -->
+        <div id="guess-screen" class="screen">
+            <h2>&#129332; Your Turn, Mantri!</h2>
+            <div class="mantri-badge">
+                <span>&#128373;</span>
+                <p>Find the Chor!</p>
+            </div>
+            <p class="hint">&#129300; Who do you think is the thief?</p>
+            <div id="suspect-buttons" class="suspect-buttons"></div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="screen">
+            <h2 id="result-title"></h2>
+            <div id="result-emoji" class="result-emoji"></div>
+            <div id="result-details" class="result-details"></div>
+            <div id="round-scores" class="round-scores"></div>
+            <button id="next-round-btn" class="btn primary pulse-btn hidden">&#127922; Next Round!</button>
+            <p id="result-wait" class="hint hidden">Waiting for host to start next round...</p>
+        </div>
+
+        <!-- Final Screen -->
+        <div id="final-screen" class="screen">
+            <h2 class="final-title">&#127941; Game Over! &#127941;</h2>
+            <div id="winner-announce" class="winner-announce"></div>
+            <div id="final-scores" class="final-scores"></div>
+            <button id="play-again-btn" class="btn primary pulse-btn hidden">&#128260; Play Again!</button>
+        </div>
+
+        <!-- Connecting Screen -->
+        <div id="connecting-screen" class="screen">
+            <h2>&#128268; Connecting...</h2>
+            <div class="waiting-animation"><div class="spinner"></div></div>
+            <p class="hint">Setting up your connection...</p>
+        </div>
+    </div>
+
+    <div id="sound-toggle" class="sound-toggle" title="Toggle Sound">&#128266;</div>
+    <div id="connection-status" class="connection-status">&#9899; Ready</div>
+
+    <script src="client.js"></script>
+</body>
+</html>
