@@ -351,10 +351,12 @@ function listenToRoom() {
         if (!data) {
             showScreen('home-screen');
             showHomeError('Room was closed!');
+            hideChatWidget();
             return;
         }
         handleRoomUpdate(data);
     });
+    initChat();
 }
 
 function handleRoomUpdate(data) {
@@ -826,7 +828,10 @@ function deleteRoom() {
     }
     clearSession();
     roomRef = null;
+    chatRef = null;
+    chatListenerAttached = false;
     lastPhase = '';
+    hideChatWidget();
     showScreen('home-screen');
 }
 
@@ -836,6 +841,104 @@ document.getElementById('player-name').addEventListener('keydown', (e) => {
 
 document.getElementById('room-code').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('join-btn').click();
+});
+
+// ====== CHAT SYSTEM ======
+let chatOpen = false;
+let unreadCount = 0;
+let chatRef = null;
+let chatListenerAttached = false;
+
+function showChatWidget() {
+    document.getElementById('chat-widget').classList.remove('hidden');
+}
+
+function hideChatWidget() {
+    document.getElementById('chat-widget').classList.add('hidden');
+}
+
+function initChat() {
+    if (!roomRef || chatListenerAttached) return;
+    chatRef = roomRef.child('chat');
+    chatListenerAttached = true;
+
+    // Listen for new messages
+    chatRef.orderByChild('time').limitToLast(50).on('child_added', (snap) => {
+        const msg = snap.val();
+        if (!msg) return;
+        appendChatMessage(msg);
+
+        if (!chatOpen && msg.name !== myName) {
+            unreadCount++;
+            updateChatBadge();
+            playTone(1000, 0.05, 'sine', 0.15);
+        }
+    });
+
+    showChatWidget();
+}
+
+function appendChatMessage(msg) {
+    const container = document.getElementById('chat-messages');
+    const isMine = msg.name === myName;
+    const div = document.createElement('div');
+    div.className = 'chat-msg' + (isMine ? ' mine' : '');
+    div.innerHTML = '<div class="chat-msg-name">' + msg.name + '</div>' +
+        '<div class="chat-msg-text">' + escapeHtml(msg.text) + '</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || !chatRef) return;
+
+    chatRef.push({
+        name: myName,
+        text: text,
+        time: firebase.database.ServerValue.TIMESTAMP
+    });
+
+    input.value = '';
+}
+
+function updateChatBadge() {
+    const badge = document.getElementById('chat-badge');
+    if (unreadCount > 0) {
+        badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+// Chat toggle
+document.getElementById('chat-toggle').addEventListener('click', () => {
+    chatOpen = !chatOpen;
+    document.getElementById('chat-panel').classList.toggle('hidden', !chatOpen);
+    if (chatOpen) {
+        unreadCount = 0;
+        updateChatBadge();
+        document.getElementById('chat-input').focus();
+    }
+});
+
+document.getElementById('chat-close').addEventListener('click', () => {
+    chatOpen = false;
+    document.getElementById('chat-panel').classList.add('hidden');
+});
+
+document.getElementById('chat-send').addEventListener('click', sendChatMessage);
+
+document.getElementById('chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
 });
 
 // ====== BROWSE OPEN ROOMS ======
