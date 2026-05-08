@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#050510"/>
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#ffd700" stroke-width="8" opacity="0.3"/>
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#8b5cf6" stroke-width="4" opacity="0.2"/>
+  <text x="256" y="200" font-size="120" text-anchor="middle" dominant-baseline="middle">&#x1F451;</text>
+  <text x="256" y="360" font-size="56" text-anchor="middle" fill="#ffd700" font-family="sans-serif" font-weight="bold">RMCS</text>
+</svg>

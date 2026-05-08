@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#050510">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon-192.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon-192.svg">
     <title>Raja Mantri Chor Sipahi</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -11,6 +18,9 @@
 <body>
     <canvas id="confetti-canvas"></canvas>
     <div id="particles"></div>
+    <div class="shooting-star"></div>
+    <div class="shooting-star"></div>
+    <div class="shooting-star"></div>
 
     <div id="app">
         <!-- Home Screen -->
@@ -51,6 +61,7 @@
                 </div>
                 <button id="join-btn" class="btn secondary">&#128279; Join with Code</button>
             </div>
+            <p id="invite-message" class="invite-message hidden">&#127881; You've been invited! Enter your name to join.</p>
             <p id="home-error" class="error-text" style="display:none"></p>
         </div>
 
@@ -73,6 +84,11 @@
                 <p>Share this code:</p>
                 <div class="code-box" id="display-code"></div>
                 <p class="hint">Everyone opens this page &amp; joins with the code!</p>
+                <div class="invite-link-actions">
+                    <button id="copy-invite-btn" class="btn-small invite-btn">&#128203; Copy Link</button>
+                    <button id="share-invite-btn" class="btn-small invite-btn">&#128228; Share</button>
+                </div>
+                <p id="invite-copied-msg" class="invite-copied hidden">Link copied!</p>
             </div>
             <div class="player-list" id="player-list"></div>
             <div class="lobby-status" id="lobby-status">Waiting for players... (need 4)</div>
@@ -124,6 +140,12 @@
         <!-- Mantri Guess Screen -->
         <div id="guess-screen" class="screen">
             <h2>&#129332; Your Turn, Mantri!</h2>
+            <div class="timer-container" id="timer-container">
+                <div class="timer-bar">
+                    <div class="timer-bar-fill" id="timer-bar-fill"></div>
+                </div>
+                <div class="timer-text" id="timer-text">15s</div>
+            </div>
             <div class="mantri-badge">
                 <span>&#128373;</span>
                 <p>Find the Chor!</p>
@@ -167,9 +189,30 @@
         </div>
     </div>
 
+    <!-- Reaction Bar -->
+    <div id="reaction-bar" class="reaction-bar hidden">
+        <button class="reaction-btn" data-emoji="&#128514;">&#128514;</button>
+        <button class="reaction-btn" data-emoji="&#128293;">&#128293;</button>
+        <button class="reaction-btn" data-emoji="&#128561;">&#128561;</button>
+        <button class="reaction-btn" data-emoji="&#128079;">&#128079;</button>
+        <button class="reaction-btn" data-emoji="&#127881;">&#127881;</button>
+    </div>
+    <!-- Reaction display overlay -->
+    <div id="reaction-display" class="reaction-display"></div>
+
     <div id="sound-toggle" class="sound-toggle" title="Toggle Sound">&#128266;</div>
     <div id="connection-status" class="connection-status connected">&#128994; Online</div>
 
     <script src="client.js"></script>
+    <script>
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then((reg) => console.log('SW registered:', reg.scope))
+                    .catch((err) => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
 </body>
 </html>

@@ -123,15 +123,22 @@ function animateConfetti() {
 // ====== PARTICLES ======
 (function createParticles() {
     const container = document.getElementById('particles');
-    const colors = ['#ffd700', '#ff6b6b', '#4ecdc4', '#a855f7', '#ec4899'];
-    for (let i = 0; i < 15; i++) {
+    const colors = [
+        '#ffd700', '#ff6b6b', '#4ecdc4', '#a855f7', '#ec4899',
+        '#6366f1', '#14b8a6', '#f97316', '#8b5cf6', '#06b6d4'
+    ];
+    for (let i = 0; i < 25; i++) {
         const p = document.createElement('div');
         p.className = 'particle';
         p.style.left = Math.random() * 100 + '%';
-        p.style.width = p.style.height = (3 + Math.random() * 6) + 'px';
-        p.style.background = colors[Math.floor(Math.random() * colors.length)];
-        p.style.animationDuration = (8 + Math.random() * 12) + 's';
-        p.style.animationDelay = Math.random() * 10 + 's';
+        const size = (2 + Math.random() * 4) + 'px';
+        p.style.width = size;
+        p.style.height = size;
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        p.style.background = color;
+        p.style.color = color;
+        p.style.animationDuration = (10 + Math.random() * 20) + 's';
+        p.style.animationDelay = Math.random() * 15 + 's';
         container.appendChild(p);
     }
 })();
@@ -352,11 +359,13 @@ function listenToRoom() {
             showScreen('home-screen');
             showHomeError('Room was closed!');
             hideChatWidget();
+            hideReactionBar();
             return;
         }
         handleRoomUpdate(data);
     });
     initChat();
+    initReactions();
 }
 
 function handleRoomUpdate(data) {
@@ -378,6 +387,19 @@ function handleRoomUpdate(data) {
                 points: rolePoints[myRoleIndex]
             };
         }
+    }
+
+    // Show/hide reaction bar (visible during gameplay, not lobby/home)
+    if (phase === 'lobby' || !phase) {
+        hideReactionBar();
+    } else {
+        showReactionBar();
+    }
+
+    // Clear timer if we leave the guess phase
+    if (phase !== 'mantri-guess') {
+        clearMantriTimer();
+        if (waitingTimerInterval) { clearInterval(waitingTimerInterval); waitingTimerInterval = null; }
     }
 
     switch (phase) {
@@ -489,6 +511,9 @@ function handleGuessPhase(data) {
     const rajaIdx = roles.indexOf(0);
     const players = data.players || [];
 
+    // Timer: sync from Firebase timerStart field
+    const timerStart = data.timerStart || Date.now();
+
     if (mantriIdx === myIndex) {
         const suspects = players
             .map((name, i) => ({ name, index: i }))
@@ -502,18 +527,50 @@ function handleGuessPhase(data) {
             btn.textContent = '\u{1F914} ' + suspect.name;
             btn.addEventListener('click', () => {
                 playClick();
+                clearMantriTimer();
                 // Mantri submits guess - host processes
                 roomRef.child('guess').set(suspect.index);
             });
             container.appendChild(btn);
         });
         showScreen('guess-screen');
+
+        // Start the local timer (Mantri sees countdown)
+        if (lastPhase !== 'mantri-guess') {
+            startMantriTimer(timerStart);
+        }
     } else {
         showScreen('waiting-screen');
         document.getElementById('waiting-title').textContent = '\u{1F50D} Investigation!';
+
+        // Show timer countdown for waiting players too
+        const elapsed = (Date.now() - timerStart) / 1000;
+        const remaining = Math.max(0, TIMER_DURATION - elapsed);
         document.getElementById('waiting-message').textContent =
-            players[mantriIdx] + ' (Mantri) is finding the Chor...';
+            players[mantriIdx] + ' (Mantri) is finding the Chor... (' + Math.ceil(remaining) + 's left)';
+
+        // Update waiting message with countdown
+        if (lastPhase !== 'mantri-guess') {
+            startWaitingTimerDisplay(timerStart, players[mantriIdx]);
+        }
     }
+}
+
+let waitingTimerInterval = null;
+function startWaitingTimerDisplay(startTime, mantriName) {
+    if (waitingTimerInterval) clearInterval(waitingTimerInterval);
+    waitingTimerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const remaining = Math.max(0, TIMER_DURATION - elapsed);
+        const msg = document.getElementById('waiting-message');
+        if (msg && document.getElementById('waiting-screen').classList.contains('active')) {
+            msg.textContent = mantriName + ' (Mantri) is finding the Chor... (' + Math.ceil(remaining) + 's left)';
+        }
+        if (remaining <= 0) {
+            clearInterval(waitingTimerInterval);
+            waitingTimerInterval = null;
+        }
+    }, 500);
 }
 
 // ====== RESULT ======
@@ -644,7 +701,10 @@ function hostListenRevealDone() {
             // All revealed, move to raja announce then guess
             roomRef.update({ phase: 'raja-announce' });
             setTimeout(() => {
-                roomRef.update({ phase: 'mantri-guess' });
+                roomRef.update({
+                    phase: 'mantri-guess',
+                    timerStart: Date.now()
+                });
             }, 2500);
         }
     });
@@ -830,8 +890,13 @@ function deleteRoom() {
     roomRef = null;
     chatRef = null;
     chatListenerAttached = false;
+    reactionsRef = null;
+    reactionsListenerAttached = false;
     lastPhase = '';
     hideChatWidget();
+    hideReactionBar();
+    clearMantriTimer();
+    if (waitingTimerInterval) { clearInterval(waitingTimerInterval); waitingTimerInterval = null; }
     showScreen('home-screen');
 }
 
@@ -1002,6 +1067,218 @@ document.getElementById('refresh-rooms-btn').addEventListener('click', () => {
     playClick();
     loadOpenRooms();
 });
+
+// ====== MOBILE KEYBOARD HANDLING ======
+const chatInput = document.getElementById('chat-input');
+chatInput.addEventListener('focus', () => {
+    setTimeout(() => {
+        chatInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+});
+
+// Prevent body scroll when chat is open on mobile
+document.getElementById('chat-panel').addEventListener('touchmove', (e) => {
+    e.stopPropagation();
+}, { passive: true });
+
+// ====== TIMER SYSTEM (15s for Mantri) ======
+let timerInterval = null;
+let timerStartTime = null;
+const TIMER_DURATION = 15; // seconds
+
+function playTick() {
+    playTone(1200, 0.05, 'square', 0.15);
+}
+
+function startMantriTimer(firebaseStartTime) {
+    clearMantriTimer();
+    timerStartTime = firebaseStartTime || Date.now();
+
+    const timerBar = document.getElementById('timer-bar-fill');
+    const timerText = document.getElementById('timer-text');
+    const timerContainer = document.getElementById('timer-container');
+    if (timerContainer) timerContainer.style.display = '';
+
+    timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - timerStartTime) / 1000;
+        const remaining = Math.max(0, TIMER_DURATION - elapsed);
+        const percent = (remaining / TIMER_DURATION) * 100;
+
+        timerBar.style.width = percent + '%';
+        timerText.textContent = Math.ceil(remaining) + 's';
+
+        // Color classes
+        timerBar.classList.remove('warning', 'danger');
+        timerText.classList.remove('warning', 'danger');
+        if (remaining <= 5) {
+            timerBar.classList.add('danger');
+            timerText.classList.add('danger');
+            // Tick sound in last 5 seconds
+            if (remaining > 0 && Math.ceil(remaining) !== Math.ceil(remaining + 0.05)) {
+                // Only tick once per second
+            }
+        } else if (remaining <= 8) {
+            timerBar.classList.add('warning');
+            timerText.classList.add('warning');
+        }
+
+        // Tick in last 5 seconds (once per second boundary)
+        if (remaining <= 5 && remaining > 0) {
+            const prevRemaining = remaining + 0.1;
+            if (Math.ceil(remaining) < Math.ceil(prevRemaining)) {
+                playTick();
+            }
+        }
+
+        if (remaining <= 0) {
+            clearMantriTimer();
+            // If I am the Mantri, auto-pick random suspect
+            autoPickSuspect();
+        }
+    }, 100);
+}
+
+function clearMantriTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
+function autoPickSuspect() {
+    // Only auto-pick if we're on the guess screen and are the Mantri
+    const guessScreen = document.getElementById('guess-screen');
+    if (!guessScreen.classList.contains('active')) return;
+
+    const buttons = document.querySelectorAll('.suspect-btn');
+    if (buttons.length > 0) {
+        const randomBtn = buttons[Math.floor(Math.random() * buttons.length)];
+        randomBtn.click();
+    }
+}
+
+// ====== QUICK REACTIONS ======
+let reactionsRef = null;
+let reactionsListenerAttached = false;
+
+function showReactionBar() {
+    document.getElementById('reaction-bar').classList.remove('hidden');
+}
+
+function hideReactionBar() {
+    document.getElementById('reaction-bar').classList.add('hidden');
+}
+
+function initReactions() {
+    if (!roomRef || reactionsListenerAttached) return;
+    reactionsRef = roomRef.child('reactions');
+    reactionsListenerAttached = true;
+
+    // Listen for new reactions
+    reactionsRef.limitToLast(1).on('child_added', (snap) => {
+        const reaction = snap.val();
+        if (!reaction) return;
+        displayReaction(reaction.emoji, reaction.name);
+        // Remove old reactions to prevent buildup
+        snap.ref.remove();
+    });
+}
+
+function sendReaction(emoji) {
+    if (!reactionsRef || !myName) return;
+    reactionsRef.push({
+        emoji: emoji,
+        name: myName,
+        time: firebase.database.ServerValue.TIMESTAMP
+    });
+}
+
+function displayReaction(emoji, senderName) {
+    const container = document.getElementById('reaction-display');
+    const el = document.createElement('div');
+    el.className = 'reaction-float';
+    // Random horizontal position
+    el.style.left = (15 + Math.random() * 70) + '%';
+    el.style.bottom = '10%';
+    el.innerHTML = '<span class="reaction-emoji">' + emoji + '</span>' +
+        '<span class="reaction-sender">' + escapeHtml(senderName) + '</span>';
+    container.appendChild(el);
+
+    // Remove after animation
+    setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+    }, 2600);
+}
+
+// Attach reaction button listeners
+document.querySelectorAll('.reaction-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const emoji = btn.getAttribute('data-emoji');
+        sendReaction(emoji);
+        playTone(600, 0.06, 'sine', 0.15);
+        // Quick scale animation feedback
+        btn.style.transform = 'scale(1.4)';
+        setTimeout(() => btn.style.transform = '', 200);
+    });
+});
+
+// ====== INVITE LINK SYSTEM ======
+function getInviteLink() {
+    const baseUrl = window.location.href.split('?')[0];
+    return baseUrl + '?room=' + roomCode;
+}
+
+function checkInviteLink() {
+    const params = new URLSearchParams(window.location.search);
+    const inviteCode = params.get('room');
+    if (inviteCode) {
+        document.getElementById('room-code').value = inviteCode.toUpperCase();
+        document.getElementById('invite-message').classList.remove('hidden');
+        // Focus on name field
+        setTimeout(() => document.getElementById('player-name').focus(), 300);
+    }
+}
+
+document.getElementById('copy-invite-btn').addEventListener('click', () => {
+    const link = getInviteLink();
+    navigator.clipboard.writeText(link).then(() => {
+        const msg = document.getElementById('invite-copied-msg');
+        msg.classList.remove('hidden');
+        msg.textContent = 'Link copied!';
+        playClick();
+        setTimeout(() => msg.classList.add('hidden'), 2500);
+    }).catch(() => {
+        // Fallback: select and copy
+        const textarea = document.createElement('textarea');
+        textarea.value = getInviteLink();
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        const msg = document.getElementById('invite-copied-msg');
+        msg.classList.remove('hidden');
+        msg.textContent = 'Link copied!';
+        playClick();
+        setTimeout(() => msg.classList.add('hidden'), 2500);
+    });
+});
+
+document.getElementById('share-invite-btn').addEventListener('click', () => {
+    const link = getInviteLink();
+    if (navigator.share) {
+        navigator.share({
+            title: 'Join my Raja Mantri Chor Sipahi game!',
+            text: 'Join room ' + roomCode + ' to play!',
+            url: link
+        }).catch(() => {});
+    } else {
+        // Fallback to copy
+        document.getElementById('copy-invite-btn').click();
+    }
+});
+
+// Check invite link on page load
+checkInviteLink();
 
 // ====== AUTO-RECONNECT ON PAGE LOAD ======
 tryReconnect();
