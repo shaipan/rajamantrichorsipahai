@@ -34,12 +34,22 @@
                     <input type="text" id="player-name" placeholder="Your Name" maxlength="15">
                 </div>
                 <button id="create-btn" class="btn primary pulse-btn">&#127881; Create Room</button>
-                <div class="divider"><span>OR</span></div>
+                <div class="divider"><span>OR JOIN</span></div>
+                <div id="open-rooms" class="open-rooms">
+                    <div class="open-rooms-header">
+                        <span>&#127968; Open Rooms</span>
+                        <button id="refresh-rooms-btn" class="refresh-btn">&#128260;</button>
+                    </div>
+                    <div id="rooms-list" class="rooms-list">
+                        <p class="hint">Looking for rooms...</p>
+                    </div>
+                </div>
+                <div class="divider"><span>OR CODE</span></div>
                 <div class="input-group">
                     <span class="input-icon">&#128273;</span>
                     <input type="text" id="room-code" placeholder="Room Code" maxlength="6" style="text-transform:uppercase">
                 </div>
-                <button id="join-btn" class="btn secondary">&#128279; Join Room</button>
+                <button id="join-btn" class="btn secondary">&#128279; Join with Code</button>
             </div>
             <p id="home-error" class="error-text" style="display:none"></p>
         </div>

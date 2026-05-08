@@ -191,6 +191,106 @@ h2 { font-size: 1.4rem; margin-bottom: 15px; color: #e0e0e0; }
     outline: none;
 }
 
+/* Open Rooms */
+.open-rooms {
+    margin: 5px 0;
+}
+
+.open-rooms-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #ccc;
+    font-size: 0.95rem;
+    font-weight: bold;
+}
+
+.refresh-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+    cursor: pointer;
+    color: #fff;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.refresh-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(180deg);
+}
+
+.rooms-list {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.room-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    transition: all 0.3s;
+    cursor: pointer;
+    animation: slideIn 0.3s ease backwards;
+}
+
+.room-item:hover {
+    border-color: #4ecdc4;
+    background: rgba(78, 205, 196, 0.1);
+    transform: translateX(4px);
+}
+
+.room-item-info {
+    text-align: left;
+}
+
+.room-item-host {
+    font-size: 0.95rem;
+    font-weight: bold;
+    color: #fff;
+}
+
+.room-item-players {
+    font-size: 0.75rem;
+    color: #999;
+    margin-top: 2px;
+}
+
+.room-item-join {
+    background: linear-gradient(135deg, #4ecdc4, #44b3aa);
+    color: #1a1a2e;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.room-item-join:hover {
+    transform: scale(1.05);
+    box-shadow: 0 3px 10px rgba(78, 205, 196, 0.3);
+}
+
+.no-rooms {
+    color: #777;
+    font-size: 0.9rem;
+    padding: 15px;
+    text-align: center;
+}
+
 /* Settings */
 .settings-box {
     background: rgba(255, 255, 255, 0.05);

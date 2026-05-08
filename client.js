@@ -838,5 +838,67 @@ document.getElementById('room-code').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('join-btn').click();
 });
 
+// ====== BROWSE OPEN ROOMS ======
+function loadOpenRooms() {
+    const listEl = document.getElementById('rooms-list');
+    listEl.innerHTML = '<p class="hint">Looking for rooms...</p>';
+
+    db.ref('rooms').orderByChild('phase').equalTo('lobby').once('value').then((snap) => {
+        const rooms = [];
+        snap.forEach((child) => {
+            const data = child.val();
+            const players = data.players || [];
+            if (players.length < 4) {
+                rooms.push({
+                    code: child.key,
+                    host: data.host || players[0] || '???',
+                    playerCount: players.length,
+                    players: players
+                });
+            }
+        });
+
+        if (rooms.length === 0) {
+            listEl.innerHTML = '<p class="no-rooms">No open rooms. Create one!</p>';
+            return;
+        }
+
+        listEl.innerHTML = rooms.map(r =>
+            '<div class="room-item" data-code="' + r.code + '">' +
+                '<div class="room-item-info">' +
+                    '<div class="room-item-host">\u{1F451} ' + r.host + '\'s Room</div>' +
+                    '<div class="room-item-players">' + r.playerCount + '/4 players • ' + r.players.join(', ') + '</div>' +
+                '</div>' +
+                '<button class="room-item-join">Join</button>' +
+            '</div>'
+        ).join('');
+
+        // Add click handlers
+        listEl.querySelectorAll('.room-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const code = item.getAttribute('data-code');
+                myName = document.getElementById('player-name').value.trim();
+                if (!myName) {
+                    document.getElementById('player-name').focus();
+                    document.querySelector('.home-actions .input-group').classList.add('shake');
+                    setTimeout(() => document.querySelector('.home-actions .input-group').classList.remove('shake'), 600);
+                    return;
+                }
+                playClick();
+                joinRoom(code);
+            });
+        });
+    }).catch(() => {
+        listEl.innerHTML = '<p class="no-rooms">Could not load rooms</p>';
+    });
+}
+
+// Load rooms on page load and refresh button
+loadOpenRooms();
+document.getElementById('refresh-rooms-btn').addEventListener('click', () => {
+    playClick();
+    loadOpenRooms();
+});
+
 // ====== AUTO-RECONNECT ON PAGE LOAD ======
 tryReconnect();
