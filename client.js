@@ -236,8 +236,23 @@ connInfo.on('value', (snap) => {
     }
 });
 
+// ====== CLEANUP OLD ROOMS ======
+function cleanupOldRooms() {
+    const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+    db.ref('rooms').orderByChild('timestamp').endAt(twoHoursAgo).once('value').then((snap) => {
+        const updates = {};
+        snap.forEach((child) => {
+            updates[child.key] = null;
+        });
+        if (Object.keys(updates).length > 0) {
+            db.ref('rooms').update(updates);
+        }
+    });
+}
+
 // ====== CREATE ROOM ======
 function createRoom() {
+    cleanupOldRooms();
     roomCode = generateRoomCode();
     roomRef = db.ref('rooms/' + roomCode);
 
@@ -581,6 +596,19 @@ function handleGameOver(data) {
     document.getElementById('play-again-btn').classList.toggle('hidden', !isHost);
     showScreen('final-screen');
     setTimeout(() => createConfetti(60), 800);
+
+    // Auto-delete room after 5 minutes if no one plays again
+    if (isHost) {
+        setTimeout(() => {
+            roomRef && roomRef.once('value').then((snap) => {
+                const data = snap.val();
+                if (data && data.phase === 'game-over') {
+                    roomRef.remove();
+                    clearSession();
+                }
+            });
+        }, 5 * 60 * 1000);
+    }
 }
 
 // ====== HOST: START ROUND ======
@@ -789,9 +817,15 @@ document.getElementById('play-again-btn').addEventListener('click', () => {
     lastPhase = '';
 });
 
-// ====== HANDLE GAME OVER - clear session ======
-function onGameFullyOver() {
+// ====== DELETE ROOM (host only, after game ends) ======
+function deleteRoom() {
+    if (roomRef) {
+        roomRef.remove();
+    }
     clearSession();
+    roomRef = null;
+    lastPhase = '';
+    showScreen('home-screen');
 }
 
 document.getElementById('player-name').addEventListener('keydown', (e) => {
