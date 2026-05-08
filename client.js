@@ -145,6 +145,56 @@ let roomRef = null;
 let lastPhase = '';
 let lastRevealCount = 0;
 
+// ====== SESSION PERSISTENCE ======
+function saveSession() {
+    localStorage.setItem('rmcs_session', JSON.stringify({
+        roomCode, myIndex, myName, isHost
+    }));
+}
+
+function clearSession() {
+    localStorage.removeItem('rmcs_session');
+}
+
+function tryReconnect() {
+    const saved = localStorage.getItem('rmcs_session');
+    if (!saved) return false;
+
+    try {
+        const session = JSON.parse(saved);
+        if (!session.roomCode || session.myIndex < 0) return false;
+
+        // Check if room still exists
+        const ref = db.ref('rooms/' + session.roomCode);
+        ref.once('value').then((snap) => {
+            const data = snap.val();
+            if (!data || !data.players || !data.players[session.myIndex]) {
+                clearSession();
+                return;
+            }
+            // Room exists and our slot is there - rejoin!
+            roomCode = session.roomCode;
+            myIndex = session.myIndex;
+            myName = session.myName;
+            isHost = session.isHost;
+            roomRef = ref;
+
+            listenToRoom();
+            if (isHost) {
+                hostListenRevealDone();
+                hostListenGuess();
+            }
+        }).catch(() => {
+            clearSession();
+        });
+
+        return true;
+    } catch (e) {
+        clearSession();
+        return false;
+    }
+}
+
 function generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
@@ -211,9 +261,7 @@ function createRoom() {
         showScreen('lobby-screen');
         playClick();
         listenToRoom();
-
-        // Clean up room on disconnect
-        roomRef.onDisconnect().remove();
+        saveSession();
     }).catch(() => {
         showScreen('home-screen');
         showHomeError('Failed to create room. Try again.');
@@ -232,12 +280,32 @@ function joinRoom(code) {
             showHomeError('Room not found! Check the code.');
             return;
         }
-        if (data.phase !== 'lobby') {
-            showScreen('home-screen');
-            showHomeError('Game already in progress!');
+
+        const players = data.players || [];
+
+        // Check if this player is already in the room (rejoin)
+        const existingIndex = players.indexOf(myName);
+        if (existingIndex !== -1) {
+            // Rejoin! Restore their position
+            myIndex = existingIndex;
+            isHost = (existingIndex === 0);
+            document.getElementById('display-code').textContent = roomCode;
+            listenToRoom();
+            saveSession();
+            playJoin();
+            if (isHost) {
+                hostListenRevealDone();
+                hostListenGuess();
+            }
             return;
         }
-        const players = data.players || [];
+
+        // New player trying to join
+        if (data.phase !== 'lobby') {
+            showScreen('home-screen');
+            showHomeError('Game in progress! Use the same name to rejoin.');
+            return;
+        }
         if (players.length >= 4) {
             showScreen('home-screen');
             showHomeError('Room is full!');
@@ -253,6 +321,7 @@ function joinRoom(code) {
             showScreen('lobby-screen');
             playJoin();
             listenToRoom();
+            saveSession();
         });
     }).catch(() => {
         showScreen('home-screen');
@@ -277,9 +346,28 @@ function handleRoomUpdate(data) {
     const players = data.players || [];
     const phase = data.phase;
 
+    // Update host status in case of reconnect
+    if (myIndex === 0) isHost = true;
+
+    // Always keep my role updated
+    if (data.roles && myIndex >= 0) {
+        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
+        const rolePoints = [1000, 800, 600, 0];
+        const myRoleIndex = data.roles[myIndex];
+        if (myRoleIndex !== undefined) {
+            window._myRole = {
+                role: myRoleIndex,
+                roleName: roleNames[myRoleIndex],
+                points: rolePoints[myRoleIndex]
+            };
+        }
+    }
+
     switch (phase) {
         case 'lobby':
             updateLobby(players);
+            showScreen('lobby-screen');
+            document.getElementById('display-code').textContent = roomCode;
             break;
 
         case 'reveal':
@@ -344,7 +432,6 @@ function updateLobby(playerNames) {
 function handleRevealPhase(data) {
     const currentRevealIndex = data.currentRevealIndex || 0;
     const round = data.currentRound;
-    const roles = data.roles || [];
 
     if (lastPhase !== 'reveal') {
         playDrumRoll();
@@ -356,37 +443,11 @@ function handleRevealPhase(data) {
         document.getElementById('role-card').classList.add('hidden');
         document.getElementById('reveal-btn').classList.remove('hidden');
         document.getElementById('reveal-done-btn').classList.add('hidden');
-
-        // Store my role
-        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
-        const rolePoints = [1000, 800, 600, 0];
-        const myRoleIndex = roles[myIndex];
-        window._myRole = {
-            role: myRoleIndex,
-            roleName: roleNames[myRoleIndex],
-            points: rolePoints[myRoleIndex]
-        };
     } else {
         showScreen('waiting-screen');
         document.getElementById('waiting-title').textContent = 'Round ' + round + '!';
         const revealPlayer = (data.players || [])[currentRevealIndex] || '';
-        if (currentRevealIndex < myIndex) {
-            document.getElementById('waiting-message').textContent = revealPlayer + ' is viewing their role...';
-        } else if (currentRevealIndex > myIndex) {
-            document.getElementById('waiting-message').textContent = revealPlayer + ' is viewing their role...';
-        } else {
-            document.getElementById('waiting-message').textContent = 'Waiting for others...';
-        }
-
-        // Still need to know my role
-        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
-        const rolePoints = [1000, 800, 600, 0];
-        const myRoleIndex = roles[myIndex];
-        window._myRole = {
-            role: myRoleIndex,
-            roleName: roleNames[myRoleIndex],
-            points: rolePoints[myRoleIndex]
-        };
+        document.getElementById('waiting-message').textContent = revealPlayer + ' is viewing their role...';
     }
 }
 
@@ -728,6 +789,11 @@ document.getElementById('play-again-btn').addEventListener('click', () => {
     lastPhase = '';
 });
 
+// ====== HANDLE GAME OVER - clear session ======
+function onGameFullyOver() {
+    clearSession();
+}
+
 document.getElementById('player-name').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('create-btn').click();
 });
@@ -735,3 +801,6 @@ document.getElementById('player-name').addEventListener('keydown', (e) => {
 document.getElementById('room-code').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('join-btn').click();
 });
+
+// ====== AUTO-RECONNECT ON PAGE LOAD ======
+tryReconnect();
