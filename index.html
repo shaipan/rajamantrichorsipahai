@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Raja Mantri Chor Sipahi</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 </head>
 <body>
     <canvas id="confetti-canvas"></canvas>
@@ -61,7 +62,7 @@
             <div class="room-code-display">
                 <p>Share this code:</p>
                 <div class="code-box" id="display-code"></div>
-                <p class="hint">Everyone opens this same page &amp; joins with the code!</p>
+                <p class="hint">Everyone opens this page &amp; joins with the code!</p>
             </div>
             <div class="player-list" id="player-list"></div>
             <div class="lobby-status" id="lobby-status">Waiting for players... (need 4)</div>
@@ -138,17 +139,10 @@
             <div id="final-scores" class="final-scores"></div>
             <button id="play-again-btn" class="btn primary pulse-btn hidden">&#128260; Play Again!</button>
         </div>
-
-        <!-- Connecting Screen -->
-        <div id="connecting-screen" class="screen">
-            <h2>&#128268; Connecting...</h2>
-            <div class="waiting-animation"><div class="spinner"></div></div>
-            <p class="hint">Setting up your connection...</p>
-        </div>
     </div>
 
     <div id="sound-toggle" class="sound-toggle" title="Toggle Sound">&#128266;</div>
-    <div id="connection-status" class="connection-status">&#9899; Ready</div>
+    <div id="connection-status" class="connection-status connected">&#128994; Online</div>
 
     <script src="client.js"></script>
 </body>

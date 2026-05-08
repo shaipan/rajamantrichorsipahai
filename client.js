@@ -1,3 +1,16 @@
+// ====== FIREBASE SETUP ======
+firebase.initializeApp({
+    apiKey: "AIzaSyAjPFEGLXsIogfy1ubZWwXeb-wAykRAV6Q",
+    authDomain: "raja-mantri-game-4769c.firebaseapp.com",
+    databaseURL: "https://raja-mantri-game-4769c-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "raja-mantri-game-4769c",
+    storageBucket: "raja-mantri-game-4769c.firebasestorage.app",
+    messagingSenderId: "441832957136",
+    appId: "1:441832957136:web:af53392315b7fa34a82ad5"
+});
+
+const db = firebase.database();
+
 // ====== SOUND SYSTEM ======
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let audioCtx;
@@ -123,19 +136,14 @@ function animateConfetti() {
     }
 })();
 
-// ====== PEER-TO-PEER NETWORKING ======
-const ROOM_PREFIX = 'rmcs-game-';
-let peer = null;
-let connections = []; // Host: array of connections to guests
-let hostConn = null;  // Guest: connection to host
-let isHost = false;
+// ====== GAME STATE ======
+let roomCode = '';
 let myIndex = -1;
 let myName = '';
-let myRole = null;
-let players = [];
-let roomCode = '';
-let currentRound = 0;
-let totalRounds = 5;
+let isHost = false;
+let roomRef = null;
+let lastPhase = '';
+let lastRevealCount = 0;
 
 function generateRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -165,244 +173,140 @@ function showHomeError(msg) {
     setTimeout(() => el.style.display = 'none', 4000);
 }
 
-// ====== HOST LOGIC ======
-let gameState = {};
-
-function hostBroadcast(msg) {
-    const data = JSON.stringify(msg);
-    connections.forEach(conn => {
-        if (conn && conn.open) conn.send(data);
-    });
-    // Also deliver to self (host)
-    handleGameMessage(msg);
-}
-
-function hostSendTo(playerIndex, msg) {
-    if (playerIndex === 0) {
-        handleGameMessage(msg);
+// ====== CONNECTION STATUS ======
+const connInfo = firebase.database().ref('.info/connected');
+connInfo.on('value', (snap) => {
+    const el = document.getElementById('connection-status');
+    if (snap.val() === true) {
+        el.textContent = '\u{1F7E2} Online';
+        el.className = 'connection-status connected';
     } else {
-        const conn = connections[playerIndex - 1];
-        if (conn && conn.open) conn.send(JSON.stringify(msg));
+        el.textContent = '\u{1F534} Offline';
+        el.className = 'connection-status disconnected';
     }
+});
+
+// ====== CREATE ROOM ======
+function createRoom() {
+    roomCode = generateRoomCode();
+    roomRef = db.ref('rooms/' + roomCode);
+
+    roomRef.set({
+        host: myName,
+        players: [myName],
+        scores: [0, 0, 0, 0],
+        totalRounds: parseInt(document.getElementById('total-rounds').value) || 5,
+        currentRound: 0,
+        phase: 'lobby',
+        roles: [0, 1, 2, 3],
+        currentRevealIndex: 0,
+        revealedCount: 0,
+        guessResult: null,
+        standings: null,
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    }).then(() => {
+        myIndex = 0;
+        isHost = true;
+        document.getElementById('display-code').textContent = roomCode;
+        showScreen('lobby-screen');
+        playClick();
+        listenToRoom();
+
+        // Clean up room on disconnect
+        roomRef.onDisconnect().remove();
+    }).catch(() => {
+        showScreen('home-screen');
+        showHomeError('Failed to create room. Try again.');
+    });
 }
 
-function hostStartRound() {
-    gameState.currentRound++;
-    gameState.roles = shuffle([0, 1, 2, 3]);
-    gameState.revealedCount = 0;
-    gameState.phase = 'reveal';
-    gameState.currentRevealIndex = 0;
+// ====== JOIN ROOM ======
+function joinRoom(code) {
+    roomCode = code.toUpperCase();
+    roomRef = db.ref('rooms/' + roomCode);
 
-    hostBroadcast({
-        type: 'round-start',
-        round: gameState.currentRound,
-        totalRounds: gameState.totalRounds,
-        players: gameState.players
-    });
+    roomRef.once('value').then((snap) => {
+        const data = snap.val();
+        if (!data) {
+            showScreen('home-screen');
+            showHomeError('Room not found! Check the code.');
+            return;
+        }
+        if (data.phase !== 'lobby') {
+            showScreen('home-screen');
+            showHomeError('Game already in progress!');
+            return;
+        }
+        const players = data.players || [];
+        if (players.length >= 4) {
+            showScreen('home-screen');
+            showHomeError('Room is full!');
+            return;
+        }
 
-    // Send each player their private role
-    const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
-    const rolePoints = [1000, 800, 600, 0];
-    for (let i = 0; i < 4; i++) {
-        const ri = gameState.roles[i];
-        hostSendTo(i, {
-            type: 'your-role',
-            role: ri,
-            roleName: roleNames[ri],
-            points: rolePoints[ri]
+        myIndex = players.length;
+        isHost = false;
+        players.push(myName);
+
+        roomRef.child('players').set(players).then(() => {
+            document.getElementById('display-code').textContent = roomCode;
+            showScreen('lobby-screen');
+            playJoin();
+            listenToRoom();
         });
-    }
-
-    hostPromptReveal();
-}
-
-function hostPromptReveal() {
-    const idx = gameState.currentRevealIndex;
-    hostBroadcast({
-        type: 'reveal-turn',
-        playerIndex: idx,
-        playerName: gameState.players[idx]
+    }).catch(() => {
+        showScreen('home-screen');
+        showHomeError('Connection error. Try again.');
     });
 }
 
-function hostHandleRevealDone(fromIndex) {
-    if (fromIndex !== gameState.currentRevealIndex) return;
-    gameState.currentRevealIndex++;
-    gameState.revealedCount++;
-
-    if (gameState.revealedCount >= 4) {
-        // Announce Raja
-        const rajaIdx = gameState.roles.indexOf(0);
-        gameState.phase = 'guess';
-        hostBroadcast({
-            type: 'raja-announce',
-            rajaIndex: rajaIdx,
-            rajaName: gameState.players[rajaIdx]
-        });
-
-        // Prompt Mantri
-        setTimeout(() => {
-            const mantriIdx = gameState.roles.indexOf(1);
-            const suspects = gameState.players
-                .map((name, i) => ({ name, index: i }))
-                .filter(p => p.index !== rajaIdx && p.index !== mantriIdx);
-
-            hostBroadcast({
-                type: 'mantri-guess',
-                mantriIndex: mantriIdx,
-                mantriName: gameState.players[mantriIdx],
-                suspects
-            });
-        }, 2500);
-    } else {
-        hostPromptReveal();
-    }
-}
-
-function hostHandleGuess(fromIndex, guessIndex) {
-    const mantriIdx = gameState.roles.indexOf(1);
-    if (fromIndex !== mantriIdx) return;
-
-    const chorIdx = gameState.roles.indexOf(3);
-    const correct = guessIndex === chorIdx;
-    const pointValues = [1000, 800, 600, 0];
-
-    let roundPoints = [0, 0, 0, 0];
-    for (let i = 0; i < 4; i++) {
-        roundPoints[i] = pointValues[gameState.roles[i]];
-    }
-    if (!correct) {
-        roundPoints[mantriIdx] = 0;
-        roundPoints[chorIdx] = 800;
-    }
-    for (let i = 0; i < 4; i++) {
-        gameState.scores[i] += roundPoints[i];
-    }
-
-    const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
-    hostBroadcast({
-        type: 'round-result',
-        correct,
-        guessedIndex: guessIndex,
-        guessedName: gameState.players[guessIndex],
-        chorIndex: chorIdx,
-        chorName: gameState.players[chorIdx],
-        roles: gameState.players.map((name, i) => ({
-            name,
-            role: roleNames[gameState.roles[i]],
-            roleIndex: gameState.roles[i],
-            roundPoints: roundPoints[i],
-            totalScore: gameState.scores[i]
-        })),
-        currentRound: gameState.currentRound,
-        totalRounds: gameState.totalRounds
+// ====== LISTEN TO ROOM CHANGES ======
+function listenToRoom() {
+    roomRef.on('value', (snap) => {
+        const data = snap.val();
+        if (!data) {
+            showScreen('home-screen');
+            showHomeError('Room was closed!');
+            return;
+        }
+        handleRoomUpdate(data);
     });
-
-    gameState.phase = 'result';
-
-    if (gameState.currentRound >= gameState.totalRounds) {
-        setTimeout(() => {
-            const standings = gameState.players
-                .map((name, i) => ({ name, score: gameState.scores[i] }))
-                .sort((a, b) => b.score - a.score);
-            hostBroadcast({ type: 'game-over', standings });
-            gameState.phase = 'ended';
-        }, 1000);
-    }
 }
 
-function hostHandleMessage(fromIndex, msg) {
-    switch (msg.type) {
-        case 'reveal-done':
-            hostHandleRevealDone(fromIndex);
-            break;
-        case 'guess':
-            hostHandleGuess(fromIndex, msg.guessIndex);
-            break;
-        case 'next-round':
-            if (fromIndex === 0 && gameState.phase === 'result') hostStartRound();
-            break;
-        case 'play-again':
-            if (fromIndex === 0) {
-                gameState.scores = [0, 0, 0, 0];
-                gameState.currentRound = 0;
-                gameState.phase = 'playing';
-                hostBroadcast({ type: 'game-restart' });
-                hostStartRound();
-            }
-            break;
-    }
-}
+function handleRoomUpdate(data) {
+    const players = data.players || [];
+    const phase = data.phase;
 
-// ====== GAME MESSAGE HANDLER (runs on all clients) ======
-function handleGameMessage(msg) {
-    switch (msg.type) {
-        case 'lobby-update':
-            players = msg.players;
-            updateLobby(msg.players);
+    switch (phase) {
+        case 'lobby':
+            updateLobby(players);
             break;
 
-        case 'round-start':
-            currentRound = msg.round;
-            totalRounds = msg.totalRounds;
-            players = msg.players;
-            myRole = null;
-            showScreen('waiting-screen');
-            document.getElementById('waiting-title').textContent = 'Round ' + msg.round + '!';
-            document.getElementById('waiting-message').textContent = 'Roles are being revealed...';
-            playDrumRoll();
-            break;
-
-        case 'your-role':
-            myRole = msg;
-            break;
-
-        case 'reveal-turn':
-            if (msg.playerIndex === myIndex) {
-                showRevealUI();
-            } else {
-                showScreen('waiting-screen');
-                document.getElementById('waiting-title').textContent = 'Wait...';
-                document.getElementById('waiting-message').textContent =
-                    msg.playerName + ' is viewing their role';
-            }
+        case 'reveal':
+            handleRevealPhase(data);
             break;
 
         case 'raja-announce':
-            showRajaUI(msg.rajaName);
+            handleRajaPhase(data);
             break;
 
         case 'mantri-guess':
-            if (msg.mantriIndex === myIndex) {
-                showGuessUI(msg.suspects);
-            } else {
-                showScreen('waiting-screen');
-                document.getElementById('waiting-title').textContent = '\u{1F50D} Investigation!';
-                document.getElementById('waiting-message').textContent =
-                    msg.mantriName + ' (Mantri) is finding the Chor...';
-            }
+            handleGuessPhase(data);
             break;
 
-        case 'round-result':
-            showResultUI(msg);
+        case 'result':
+            handleResultPhase(data);
             break;
 
         case 'game-over':
-            setTimeout(() => showFinalUI(msg.standings), 1500);
-            break;
-
-        case 'game-restart':
-            playDrumRoll();
-            break;
-
-        case 'player-disconnected':
-            showScreen('home-screen');
-            showHomeError(msg.playerName + ' disconnected! Game ended.');
+            handleGameOver(data);
             break;
     }
+
+    lastPhase = phase;
 }
 
-// ====== UI FUNCTIONS ======
+// ====== LOBBY ======
 function updateLobby(playerNames) {
     const list = document.getElementById('player-list');
     const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
@@ -436,70 +340,143 @@ function updateLobby(playerNames) {
     }
 }
 
-function showRevealUI() {
-    showScreen('reveal-screen');
-    document.getElementById('round-number').textContent = currentRound + '/' + totalRounds;
-    document.getElementById('role-card').classList.add('hidden');
-    document.getElementById('reveal-btn').classList.remove('hidden');
-    document.getElementById('reveal-done-btn').classList.add('hidden');
-    playDrumRoll();
+// ====== REVEAL PHASE ======
+function handleRevealPhase(data) {
+    const currentRevealIndex = data.currentRevealIndex || 0;
+    const round = data.currentRound;
+    const roles = data.roles || [];
+
+    if (lastPhase !== 'reveal') {
+        playDrumRoll();
+    }
+
+    if (currentRevealIndex === myIndex) {
+        showScreen('reveal-screen');
+        document.getElementById('round-number').textContent = round + '/' + data.totalRounds;
+        document.getElementById('role-card').classList.add('hidden');
+        document.getElementById('reveal-btn').classList.remove('hidden');
+        document.getElementById('reveal-done-btn').classList.add('hidden');
+
+        // Store my role
+        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
+        const rolePoints = [1000, 800, 600, 0];
+        const myRoleIndex = roles[myIndex];
+        window._myRole = {
+            role: myRoleIndex,
+            roleName: roleNames[myRoleIndex],
+            points: rolePoints[myRoleIndex]
+        };
+    } else {
+        showScreen('waiting-screen');
+        document.getElementById('waiting-title').textContent = 'Round ' + round + '!';
+        const revealPlayer = (data.players || [])[currentRevealIndex] || '';
+        if (currentRevealIndex < myIndex) {
+            document.getElementById('waiting-message').textContent = revealPlayer + ' is viewing their role...';
+        } else if (currentRevealIndex > myIndex) {
+            document.getElementById('waiting-message').textContent = revealPlayer + ' is viewing their role...';
+        } else {
+            document.getElementById('waiting-message').textContent = 'Waiting for others...';
+        }
+
+        // Still need to know my role
+        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
+        const rolePoints = [1000, 800, 600, 0];
+        const myRoleIndex = roles[myIndex];
+        window._myRole = {
+            role: myRoleIndex,
+            roleName: roleNames[myRoleIndex],
+            points: rolePoints[myRoleIndex]
+        };
+    }
 }
 
-function showRajaUI(rajaName) {
-    document.getElementById('raja-name').textContent = rajaName;
-    showScreen('raja-screen');
-    playRajaFanfare();
-    createConfetti(40);
-    document.getElementById('raja-waiting').textContent = 'Mantri will now find the Chor...';
+// ====== RAJA ANNOUNCE ======
+function handleRajaPhase(data) {
+    if (lastPhase !== 'raja-announce') {
+        const roles = data.roles || [];
+        const rajaIdx = roles.indexOf(0);
+        const rajaName = (data.players || [])[rajaIdx];
+        document.getElementById('raja-name').textContent = rajaName;
+        showScreen('raja-screen');
+        playRajaFanfare();
+        createConfetti(40);
+        document.getElementById('raja-waiting').textContent = 'Mantri will now find the Chor...';
+    }
 }
 
-function showGuessUI(suspects) {
-    const container = document.getElementById('suspect-buttons');
-    container.innerHTML = '';
-    suspects.forEach(suspect => {
-        const btn = document.createElement('button');
-        btn.className = 'suspect-btn';
-        btn.textContent = '\u{1F914} ' + suspect.name;
-        btn.addEventListener('click', () => {
-            playClick();
-            sendToHost({ type: 'guess', guessIndex: suspect.index });
-            showScreen('waiting-screen');
-            document.getElementById('waiting-title').textContent = '\u{1F3B2} Revealing...';
-            document.getElementById('waiting-message').textContent = 'Let\'s see if you were right!';
+// ====== MANTRI GUESS ======
+function handleGuessPhase(data) {
+    const roles = data.roles || [];
+    const mantriIdx = roles.indexOf(1);
+    const rajaIdx = roles.indexOf(0);
+    const players = data.players || [];
+
+    if (mantriIdx === myIndex) {
+        const suspects = players
+            .map((name, i) => ({ name, index: i }))
+            .filter(p => p.index !== rajaIdx && p.index !== mantriIdx);
+
+        const container = document.getElementById('suspect-buttons');
+        container.innerHTML = '';
+        suspects.forEach(suspect => {
+            const btn = document.createElement('button');
+            btn.className = 'suspect-btn';
+            btn.textContent = '\u{1F914} ' + suspect.name;
+            btn.addEventListener('click', () => {
+                playClick();
+                // Mantri submits guess - host processes
+                roomRef.child('guess').set(suspect.index);
+            });
+            container.appendChild(btn);
         });
-        container.appendChild(btn);
-    });
-    showScreen('guess-screen');
+        showScreen('guess-screen');
+    } else {
+        showScreen('waiting-screen');
+        document.getElementById('waiting-title').textContent = '\u{1F50D} Investigation!';
+        document.getElementById('waiting-message').textContent =
+            players[mantriIdx] + ' (Mantri) is finding the Chor...';
+    }
 }
 
-function showResultUI(msg) {
-    if (msg.correct) { playCorrect(); createConfetti(60); }
+// ====== RESULT ======
+function handleResultPhase(data) {
+    if (lastPhase === 'result') return;
+
+    const result = data.guessResult;
+    if (!result) return;
+
+    if (result.correct) { playCorrect(); createConfetti(60); }
     else { playWrong(); }
 
     document.getElementById('result-title').textContent =
-        msg.correct ? '\u{2705} Mantri was RIGHT!' : '\u{274C} Mantri was WRONG!';
-    document.getElementById('result-title').style.color = msg.correct ? '#4caf50' : '#f44336';
-    document.getElementById('result-emoji').textContent = msg.correct ? '\u{1F389}' : '\u{1F625}';
+        result.correct ? '\u{2705} Mantri was RIGHT!' : '\u{274C} Mantri was WRONG!';
+    document.getElementById('result-title').style.color = result.correct ? '#4caf50' : '#f44336';
+    document.getElementById('result-emoji').textContent = result.correct ? '\u{1F389}' : '\u{1F625}';
 
     const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
     const details = document.getElementById('result-details');
-    details.innerHTML = msg.roles.map(r =>
+    const roleData = result.roles || [];
+    details.innerHTML = roleData.map(r =>
         '<div class="role-reveal"><span>' + icons[r.roleIndex] + ' ' + r.name +
         '</span><span><strong>' + r.role + '</strong> (+' + r.roundPoints + ')</span></div>'
     ).join('');
 
-    if (!msg.correct) {
+    if (!result.correct) {
         details.innerHTML += '<div class="role-reveal" style="background:rgba(244,67,54,0.1);margin-top:8px;">' +
-            '<span>\u{1F6A8} Guessed: <strong>' + msg.guessedName + '</strong></span>' +
-            '<span>Chor: <strong>' + msg.chorName + '</strong></span></div>';
+            '<span>\u{1F6A8} Guessed: <strong>' + result.guessedName + '</strong></span>' +
+            '<span>Chor: <strong>' + result.chorName + '</strong></span></div>';
     }
 
+    const scores = data.scores || [];
+    const players = data.players || [];
+    const roundPoints = result.roundPoints || [];
+
     document.getElementById('round-scores').innerHTML =
-        '<h3>\u{1F4CA} Scoreboard (Round ' + msg.currentRound + '/' + msg.totalRounds + ')</h3>' +
+        '<h3>\u{1F4CA} Scoreboard (Round ' + data.currentRound + '/' + data.totalRounds + ')</h3>' +
         '<table class="score-table"><tr><th>Player</th><th>Round</th><th>Total</th></tr>' +
-        msg.roles.map(r =>
-            '<tr><td>' + r.name + '</td><td class="points-added">+' + r.roundPoints +
-            '</td><td class="score-highlight">' + r.totalScore + '</td></tr>'
+        players.map((name, i) =>
+            '<tr><td>' + name + '</td><td class="points-added">+' + (roundPoints[i] || 0) +
+            '</td><td class="score-highlight">' + (scores[i] || 0) + '</td></tr>'
         ).join('') + '</table>';
 
     const nextBtn = document.getElementById('next-round-btn');
@@ -507,7 +484,7 @@ function showResultUI(msg) {
     if (isHost) {
         nextBtn.classList.remove('hidden');
         waitMsg.classList.add('hidden');
-        nextBtn.textContent = msg.currentRound >= msg.totalRounds ? '\u{1F3C6} See Results!' : '\u{1F3B2} Next Round!';
+        nextBtn.textContent = data.currentRound >= data.totalRounds ? '\u{1F3C6} See Results!' : '\u{1F3B2} Next Round!';
     } else {
         nextBtn.classList.add('hidden');
         waitMsg.classList.remove('hidden');
@@ -516,9 +493,14 @@ function showResultUI(msg) {
     showScreen('result-screen');
 }
 
-function showFinalUI(standings) {
+// ====== GAME OVER ======
+function handleGameOver(data) {
+    if (lastPhase === 'game-over') return;
+
     playWin();
     createConfetti(120);
+
+    const standings = data.standings || [];
     const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}', '\u{1F3C5}'];
 
     document.getElementById('winner-announce').innerHTML =
@@ -540,166 +522,107 @@ function showFinalUI(standings) {
     setTimeout(() => createConfetti(60), 800);
 }
 
-function sendToHost(msg) {
-    if (isHost) {
-        hostHandleMessage(0, msg);
-    } else if (hostConn && hostConn.open) {
-        hostConn.send(JSON.stringify(msg));
-    }
-}
+// ====== HOST: START ROUND ======
+function hostStartRound() {
+    roomRef.once('value').then((snap) => {
+        const data = snap.val();
+        const round = (data.currentRound || 0) + 1;
+        const roles = shuffle([0, 1, 2, 3]);
 
-// ====== PEER SETUP ======
-function createRoom() {
-    roomCode = generateRoomCode();
-    const peerId = ROOM_PREFIX + roomCode;
-
-    showScreen('connecting-screen');
-
-    peer = new Peer(peerId);
-
-    peer.on('open', () => {
-        isHost = true;
-        myIndex = 0;
-        gameState = {
-            players: [myName],
-            scores: [0],
-            roles: [],
-            currentRound: 0,
-            totalRounds: parseInt(document.getElementById('total-rounds').value) || 5,
-            phase: 'lobby',
+        roomRef.update({
+            currentRound: round,
+            roles: roles,
+            phase: 'reveal',
+            currentRevealIndex: 0,
             revealedCount: 0,
-            currentRevealIndex: 0
-        };
-        connections = [];
-
-        document.getElementById('display-code').textContent = roomCode;
-        showScreen('lobby-screen');
-        updateLobby(gameState.players);
-        updateConnectionStatus(true);
-        playClick();
-    });
-
-    peer.on('connection', (conn) => {
-        conn.on('open', () => {
-            if (gameState.players.length >= 4) {
-                conn.send(JSON.stringify({ type: 'error', message: 'Room is full!' }));
-                conn.close();
-                return;
-            }
-            if (gameState.phase !== 'lobby') {
-                conn.send(JSON.stringify({ type: 'error', message: 'Game in progress!' }));
-                conn.close();
-                return;
-            }
-
-            const playerIdx = gameState.players.length;
-            connections.push(conn);
-            gameState.players.push(conn.metadata.name);
-            gameState.scores.push(0);
-
-            conn.send(JSON.stringify({ type: 'joined', playerIndex: playerIdx }));
-
-            // Broadcast lobby update
-            hostBroadcast({ type: 'lobby-update', players: gameState.players });
-
-            playJoin();
-
-            conn.on('data', (data) => {
-                const msg = JSON.parse(data);
-                hostHandleMessage(playerIdx, msg);
-            });
-
-            conn.on('close', () => {
-                if (gameState.phase !== 'lobby') {
-                    hostBroadcast({
-                        type: 'player-disconnected',
-                        playerName: gameState.players[playerIdx]
-                    });
-                }
-            });
+            guess: null,
+            guessResult: null,
+            standings: null
         });
     });
+}
 
-    peer.on('error', (err) => {
-        if (err.type === 'unavailable-id') {
-            showScreen('home-screen');
-            showHomeError('Room code taken! Try again.');
-        } else {
-            console.error('Peer error:', err);
-            showScreen('home-screen');
-            showHomeError('Connection error. Try again.');
+// ====== HOST: LISTEN FOR REVEAL DONE ======
+function hostListenRevealDone() {
+    roomRef.child('revealedCount').on('value', (snap) => {
+        if (!isHost) return;
+        const count = snap.val() || 0;
+        if (count >= 4) {
+            // All revealed, move to raja announce then guess
+            roomRef.update({ phase: 'raja-announce' });
+            setTimeout(() => {
+                roomRef.update({ phase: 'mantri-guess' });
+            }, 2500);
         }
     });
 }
 
-function joinRoom(code) {
-    const peerId = ROOM_PREFIX + code;
-    showScreen('connecting-screen');
+// ====== HOST: LISTEN FOR GUESS ======
+function hostListenGuess() {
+    roomRef.child('guess').on('value', (snap) => {
+        if (!isHost) return;
+        const guessIndex = snap.val();
+        if (guessIndex === null || guessIndex === undefined) return;
 
-    peer = new Peer();
+        roomRef.once('value').then((roomSnap) => {
+            const data = roomSnap.val();
+            if (data.phase !== 'mantri-guess') return;
 
-    peer.on('open', () => {
-        hostConn = peer.connect(peerId, { metadata: { name: myName } });
+            const roles = data.roles || [];
+            const players = data.players || [];
+            const scores = data.scores || [0, 0, 0, 0];
 
-        hostConn.on('open', () => {
-            updateConnectionStatus(true);
-        });
+            const chorIdx = roles.indexOf(3);
+            const mantriIdx = roles.indexOf(1);
+            const correct = guessIndex === chorIdx;
 
-        hostConn.on('data', (data) => {
-            const msg = JSON.parse(data);
+            const pointValues = [1000, 800, 600, 0];
+            let roundPoints = [0, 0, 0, 0];
+            for (let i = 0; i < 4; i++) {
+                roundPoints[i] = pointValues[roles[i]];
+            }
+            if (!correct) {
+                roundPoints[mantriIdx] = 0;
+                roundPoints[chorIdx] = 800;
+            }
 
-            if (msg.type === 'joined') {
-                myIndex = msg.playerIndex;
-                isHost = false;
-                roomCode = code;
-                document.getElementById('display-code').textContent = code;
-                showScreen('lobby-screen');
-                playJoin();
-            } else if (msg.type === 'error') {
-                showScreen('home-screen');
-                showHomeError(msg.message);
-            } else {
-                handleGameMessage(msg);
+            const newScores = scores.map((s, i) => s + roundPoints[i]);
+
+            const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
+            const guessResult = {
+                correct,
+                guessedIndex: guessIndex,
+                guessedName: players[guessIndex],
+                chorIndex: chorIdx,
+                chorName: players[chorIdx],
+                roundPoints,
+                roles: players.map((name, i) => ({
+                    name,
+                    role: roleNames[roles[i]],
+                    roleIndex: roles[i],
+                    roundPoints: roundPoints[i],
+                    totalScore: newScores[i]
+                }))
+            };
+
+            roomRef.update({
+                scores: newScores,
+                guessResult,
+                phase: 'result',
+                guess: null
+            });
+
+            // Check game over
+            if (data.currentRound >= data.totalRounds) {
+                setTimeout(() => {
+                    const standings = players
+                        .map((name, i) => ({ name, score: newScores[i] }))
+                        .sort((a, b) => b.score - a.score);
+                    roomRef.update({ phase: 'game-over', standings });
+                }, 1500);
             }
         });
-
-        hostConn.on('close', () => {
-            updateConnectionStatus(false);
-            showScreen('home-screen');
-            showHomeError('Disconnected from host!');
-        });
-
-        hostConn.on('error', () => {
-            showScreen('home-screen');
-            showHomeError('Could not connect to room!');
-        });
-
-        // Timeout if no response
-        setTimeout(() => {
-            if (myIndex === -1) {
-                showScreen('home-screen');
-                showHomeError('Room not found! Check the code.');
-                if (peer) peer.destroy();
-            }
-        }, 8000);
     });
-
-    peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        showScreen('home-screen');
-        showHomeError('Connection error. Check code & try again.');
-    });
-}
-
-function updateConnectionStatus(connected) {
-    const el = document.getElementById('connection-status');
-    if (connected) {
-        el.textContent = '\u{1F7E2} Online';
-        el.className = 'connection-status connected';
-    } else {
-        el.textContent = '\u{1F534} Offline';
-        el.className = 'connection-status disconnected';
-    }
 }
 
 // ====== EVENT LISTENERS ======
@@ -718,6 +641,8 @@ document.getElementById('create-btn').addEventListener('click', () => {
 document.getElementById('create-confirm-btn').addEventListener('click', () => {
     playClick();
     createRoom();
+    hostListenRevealDone();
+    hostListenGuess();
 });
 
 document.getElementById('join-btn').addEventListener('click', () => {
@@ -737,22 +662,17 @@ document.getElementById('join-btn').addEventListener('click', () => {
 
 document.getElementById('start-game-btn').addEventListener('click', () => {
     if (!isHost) return;
-    if (gameState.players.length !== 4) {
-        showHomeError('Need exactly 4 players!');
-        return;
-    }
     playClick();
-    gameState.phase = 'playing';
     hostStartRound();
 });
 
 document.getElementById('reveal-btn').addEventListener('click', () => {
-    if (!myRole) return;
+    if (!window._myRole) return;
     playReveal();
     const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
-    document.getElementById('role-icon').textContent = icons[myRole.role];
-    document.getElementById('role-name').textContent = myRole.roleName;
-    document.getElementById('role-points').textContent = myRole.points + ' points';
+    document.getElementById('role-icon').textContent = icons[window._myRole.role];
+    document.getElementById('role-name').textContent = window._myRole.roleName;
+    document.getElementById('role-points').textContent = window._myRole.points + ' points';
     document.getElementById('role-card').classList.remove('hidden');
     document.getElementById('reveal-btn').classList.add('hidden');
     document.getElementById('reveal-done-btn').classList.remove('hidden');
@@ -760,20 +680,52 @@ document.getElementById('reveal-btn').addEventListener('click', () => {
 
 document.getElementById('reveal-done-btn').addEventListener('click', () => {
     playClick();
-    sendToHost({ type: 'reveal-done' });
+    // Increment revealedCount and move to next player
+    roomRef.transaction((data) => {
+        if (data) {
+            data.revealedCount = (data.revealedCount || 0) + 1;
+            data.currentRevealIndex = (data.currentRevealIndex || 0) + 1;
+        }
+        return data;
+    });
     showScreen('waiting-screen');
     document.getElementById('waiting-title').textContent = 'Done!';
     document.getElementById('waiting-message').textContent = 'Waiting for others...';
 });
 
 document.getElementById('next-round-btn').addEventListener('click', () => {
+    if (!isHost) return;
     playClick();
-    sendToHost({ type: 'next-round' });
+    roomRef.once('value').then((snap) => {
+        const data = snap.val();
+        if (data.currentRound >= data.totalRounds) {
+            const players = data.players || [];
+            const scores = data.scores || [];
+            const standings = players
+                .map((name, i) => ({ name, score: scores[i] }))
+                .sort((a, b) => b.score - a.score);
+            roomRef.update({ phase: 'game-over', standings });
+        } else {
+            hostStartRound();
+        }
+    });
 });
 
 document.getElementById('play-again-btn').addEventListener('click', () => {
+    if (!isHost) return;
     playClick();
-    sendToHost({ type: 'play-again' });
+    roomRef.update({
+        scores: [0, 0, 0, 0],
+        currentRound: 0,
+        phase: 'lobby',
+        roles: [0, 1, 2, 3],
+        currentRevealIndex: 0,
+        revealedCount: 0,
+        guess: null,
+        guessResult: null,
+        standings: null
+    });
+    lastPhase = '';
 });
 
 document.getElementById('player-name').addEventListener('keydown', (e) => {
