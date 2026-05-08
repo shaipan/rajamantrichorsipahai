@@ -597,6 +597,9 @@ function handleGameOver(data) {
     showScreen('final-screen');
     setTimeout(() => createConfetti(60), 800);
 
+    // Clear session so refresh goes to home
+    clearSession();
+
     // Auto-delete room after 5 minutes if no one plays again
     if (isHost) {
         setTimeout(() => {
@@ -604,7 +607,6 @@ function handleGameOver(data) {
                 const data = snap.val();
                 if (data && data.phase === 'game-over') {
                     roomRef.remove();
-                    clearSession();
                 }
             });
         }, 5 * 60 * 1000);
