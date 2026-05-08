@@ -951,6 +951,22 @@ h2 { font-size: 1.3rem; margin-bottom: 12px; color: #e8e8f0; font-weight: 700; }
     z-index: 2000;
 }
 
+.chat-widget.chat-open {
+    bottom: 0;
+    right: 0;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.chat-widget.chat-open .chat-toggle {
+    position: fixed;
+    bottom: 15px;
+    right: 15px;
+    pointer-events: auto;
+    z-index: 3001;
+}
+
 .chat-toggle {
     width: 48px;
     height: 48px;
@@ -990,20 +1006,27 @@ h2 { font-size: 1.3rem; margin-bottom: 12px; color: #e8e8f0; font-weight: 700; }
 }
 
 .chat-panel {
-    position: absolute;
-    bottom: 58px;
-    right: 0;
-    width: 270px;
-    max-height: 340px;
-    background: rgba(15, 15, 30, 0.97);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: fixed;
+    bottom: 75px;
+    right: 15px;
+    width: 280px;
+    max-height: 50vh;
+    background: rgba(10, 10, 25, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 16px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
-    animation: screenSlide 0.3s ease;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.6);
+    animation: chatSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(20px);
+    pointer-events: auto;
+    z-index: 3000;
+}
+
+@keyframes chatSlideUp {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @media (max-width: 480px) {

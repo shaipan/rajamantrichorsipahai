@@ -988,6 +988,7 @@ function updateChatBadge() {
 document.getElementById('chat-toggle').addEventListener('click', () => {
     chatOpen = !chatOpen;
     document.getElementById('chat-panel').classList.toggle('hidden', !chatOpen);
+    document.getElementById('chat-widget').classList.toggle('chat-open', chatOpen);
     if (chatOpen) {
         unreadCount = 0;
         updateChatBadge();
@@ -998,6 +999,7 @@ document.getElementById('chat-toggle').addEventListener('click', () => {
 document.getElementById('chat-close').addEventListener('click', () => {
     chatOpen = false;
     document.getElementById('chat-panel').classList.add('hidden');
+    document.getElementById('chat-widget').classList.remove('chat-open');
 });
 
 document.getElementById('chat-send').addEventListener('click', sendChatMessage);
