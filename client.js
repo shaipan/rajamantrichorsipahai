@@ -143,6 +143,26 @@ function animateConfetti() {
     }
 })();
 
+// ====== THEME DEFINITIONS ======
+const THEMES = {
+    classic: {
+        names: ['Raja', 'Mantri', 'Sipahi', 'Chor'],
+        emojis: ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}']
+    },
+    bollywood: {
+        names: ['Director', 'Hero', 'Villain', 'Junior Artist'],
+        emojis: ['\u{1F3AC}', '\u{2B50}', '\u{1F608}', '\u{1F3AD}']
+    },
+    cricket: {
+        names: ['Captain', 'Vice Captain', 'Bowler', 'Duck'],
+        emojis: ['\u{1F3CF}', '\u{1F3AF}', '\u{1F3D0}', '\u{1F986}']
+    },
+    school: {
+        names: ['Principal', 'Teacher', 'Monitor', 'Bunker'],
+        emojis: ['\u{1F3EB}', '\u{1F4DA}', '\u{270B}', '\u{1F3C3}']
+    }
+};
+
 // ====== GAME STATE ======
 let roomCode = '';
 let myIndex = -1;
@@ -151,6 +171,33 @@ let isHost = false;
 let roomRef = null;
 let lastPhase = '';
 let lastRevealCount = 0;
+let currentTheme = 'classic';
+let currentCustomPoints = [1000, 800, 600, 0];
+let currentVibe = 'space';
+let playerAvatars = {}; // { index: { avatar, color } }
+let currentPlayers = []; // track players list for chat avatar lookup
+
+// Helper: get current theme role names and emojis
+function getThemeNames() { return THEMES[currentTheme] ? THEMES[currentTheme].names : THEMES.classic.names; }
+function getThemeEmojis() { return THEMES[currentTheme] ? THEMES[currentTheme].emojis : THEMES.classic.emojis; }
+
+// Helper: get selected avatar & color from home screen
+function getMyAvatar() {
+    const avatarEl = document.querySelector('input[name="avatar"]:checked');
+    return avatarEl ? avatarEl.value : '\u{1F9D1}';
+}
+function getMyColor() {
+    const colorEl = document.querySelector('input[name="player-color"]:checked');
+    return colorEl ? colorEl.value : 'red';
+}
+
+// Apply vibe to body
+function applyVibe(vibe) {
+    document.body.classList.remove('vibe-space', 'vibe-palace', 'vibe-jungle', 'vibe-ocean');
+    if (vibe && vibe !== 'space') {
+        document.body.classList.add('vibe-' + vibe);
+    }
+}
 
 // ====== SESSION PERSISTENCE ======
 function saveSession() {
@@ -279,6 +326,18 @@ function createRoom() {
     roomCode = generateRoomCode();
     roomRef = db.ref('rooms/' + roomCode);
 
+    // Get settings from the settings screen
+    const selectedTheme = document.querySelector('input[name="game-theme"]:checked');
+    const theme = selectedTheme ? selectedTheme.value : 'classic';
+    const selectedVibe = document.querySelector('input[name="room-vibe"]:checked');
+    const vibe = selectedVibe ? selectedVibe.value : 'space';
+    const customPoints = [
+        parseInt(document.getElementById('points-raja').value) || 1000,
+        parseInt(document.getElementById('points-mantri').value) || 800,
+        parseInt(document.getElementById('points-sipahi').value) || 600,
+        parseInt(document.getElementById('points-chor').value) || 0
+    ];
+
     roomRef.set({
         host: myName,
         players: [myName],
@@ -291,6 +350,10 @@ function createRoom() {
         revealedCount: 0,
         guessResult: null,
         standings: null,
+        theme: theme,
+        customPoints: customPoints,
+        vibe: vibe,
+        playerAvatars: [{ avatar: getMyAvatar(), color: getMyColor() }],
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         lastActivity: firebase.database.ServerValue.TIMESTAMP
     }).then(() => {
@@ -355,7 +418,14 @@ function joinRoom(code) {
         isHost = false;
         players.push(myName);
 
-        roomRef.child('players').set(players).then(() => {
+        // Store avatar/color for this player
+        const avatars = data.playerAvatars || [];
+        avatars[myIndex] = { avatar: getMyAvatar(), color: getMyColor() };
+
+        roomRef.update({
+            players: players,
+            playerAvatars: avatars
+        }).then(() => {
             document.getElementById('display-code').textContent = roomCode;
             showScreen('lobby-screen');
             playJoin();
@@ -393,10 +463,20 @@ function handleRoomUpdate(data) {
     // Update host status in case of reconnect
     if (myIndex === 0) isHost = true;
 
+    // Update theme, points, vibe, avatars from Firebase
+    currentTheme = data.theme || 'classic';
+    currentCustomPoints = data.customPoints || [1000, 800, 600, 0];
+    currentVibe = data.vibe || 'space';
+    playerAvatars = data.playerAvatars || {};
+    currentPlayers = players;
+
+    // Apply vibe background
+    applyVibe(currentVibe);
+
     // Always keep my role updated
     if (data.roles && myIndex >= 0) {
-        const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
-        const rolePoints = [1000, 800, 600, 0];
+        const roleNames = getThemeNames();
+        const rolePoints = currentCustomPoints;
         const myRoleIndex = data.roles[myIndex];
         if (myRoleIndex !== undefined) {
             window._myRole = {
@@ -462,13 +542,16 @@ function handleRoomUpdate(data) {
 // ====== LOBBY ======
 function updateLobby(playerNames) {
     const list = document.getElementById('player-list');
-    const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
     let html = '';
     for (let i = 0; i < 4; i++) {
         if (i < playerNames.length) {
             const isMe = i === myIndex;
-            html += '<div class="player-slot filled ' + (isMe ? 'you' : '') + '">' +
-                '<div class="slot-icon">' + icons[i] + '</div>' +
+            const pa = playerAvatars[i] || {};
+            const avatar = pa.avatar || '\u{1F9D1}';
+            const color = pa.color || '';
+            const colorClass = color ? ' avatar-' + color : '';
+            html += '<div class="player-slot filled ' + (isMe ? 'you' : '') + colorClass + '">' +
+                '<div class="slot-avatar">' + avatar + '</div>' +
                 '<div class="slot-name">' + playerNames[i] + '</div>' +
                 '<div class="slot-label">' + (isMe ? '(You)' : '') + (i === 0 ? ' \u{2B50} Host' : '') + '</div>' +
             '</div>';
@@ -522,11 +605,20 @@ function handleRajaPhase(data) {
         const roles = data.roles || [];
         const rajaIdx = roles.indexOf(0);
         const rajaName = (data.players || [])[rajaIdx];
+        const themeNames = getThemeNames();
+        const themeEmojis = getThemeEmojis();
         document.getElementById('raja-name').textContent = rajaName;
+        // Update raja-screen text with theme names
+        const rajaSubEl = document.querySelector('.raja-sub');
+        if (rajaSubEl) rajaSubEl.textContent = 'All bow to the ' + themeNames[0] + '!';
+        const rajaCrown = document.querySelector('.crown-animation .big-crown');
+        if (rajaCrown) rajaCrown.textContent = themeEmojis[0];
+        const rajaRevealText = document.querySelector('.raja-reveal-text');
+        if (rajaRevealText) rajaRevealText.innerHTML = '<strong>' + rajaName + '</strong> is the ' + themeNames[0] + '!';
+        document.getElementById('raja-waiting').textContent = themeNames[1] + ' will now find the ' + themeNames[3] + '...';
         showScreen('raja-screen');
         playRajaFanfare();
         createConfetti(40);
-        document.getElementById('raja-waiting').textContent = 'Mantri will now find the Chor...';
     }
 }
 
@@ -536,9 +628,16 @@ function handleGuessPhase(data) {
     const mantriIdx = roles.indexOf(1);
     const rajaIdx = roles.indexOf(0);
     const players = data.players || [];
+    const themeNames = getThemeNames();
 
     // Timer: sync from Firebase timerStart field
     const timerStart = data.timerStart || Date.now();
+
+    // Update guess screen heading with theme name
+    const guessH2 = document.querySelector('#guess-screen > h2');
+    if (guessH2) guessH2.innerHTML = getThemeEmojis()[1] + ' Your Turn, ' + themeNames[1] + '!';
+    const mantriBadgeP = document.querySelector('.mantri-badge p');
+    if (mantriBadgeP) mantriBadgeP.textContent = 'Find the ' + themeNames[3] + '!';
 
     if (mantriIdx === myIndex) {
         const suspects = players
@@ -548,9 +647,11 @@ function handleGuessPhase(data) {
         const container = document.getElementById('suspect-buttons');
         container.innerHTML = '';
         suspects.forEach(suspect => {
+            const pa = playerAvatars[suspect.index] || {};
+            const avatar = pa.avatar || '';
             const btn = document.createElement('button');
             btn.className = 'suspect-btn';
-            btn.textContent = '\u{1F914} ' + suspect.name;
+            btn.textContent = (avatar ? avatar + ' ' : '\u{1F914} ') + suspect.name;
             btn.addEventListener('click', () => {
                 playClick();
                 clearMantriTimer();
@@ -573,7 +674,7 @@ function handleGuessPhase(data) {
         const elapsed = (Date.now() - timerStart) / 1000;
         const remaining = Math.max(0, TIMER_DURATION - elapsed);
         document.getElementById('waiting-message').textContent =
-            players[mantriIdx] + ' (Mantri) is finding the Chor... (' + Math.ceil(remaining) + 's left)';
+            players[mantriIdx] + ' (' + themeNames[1] + ') is finding the ' + themeNames[3] + '... (' + Math.ceil(remaining) + 's left)';
 
         // Update waiting message with countdown
         if (lastPhase !== 'mantri-guess') {
@@ -588,9 +689,10 @@ function startWaitingTimerDisplay(startTime, mantriName) {
     waitingTimerInterval = setInterval(() => {
         const elapsed = (Date.now() - startTime) / 1000;
         const remaining = Math.max(0, TIMER_DURATION - elapsed);
+        const themeNames = getThemeNames();
         const msg = document.getElementById('waiting-message');
         if (msg && document.getElementById('waiting-screen').classList.contains('active')) {
-            msg.textContent = mantriName + ' (Mantri) is finding the Chor... (' + Math.ceil(remaining) + 's left)';
+            msg.textContent = mantriName + ' (' + themeNames[1] + ') is finding the ' + themeNames[3] + '... (' + Math.ceil(remaining) + 's left)';
         }
         if (remaining <= 0) {
             clearInterval(waitingTimerInterval);
@@ -606,39 +708,46 @@ function handleResultPhase(data) {
     const result = data.guessResult;
     if (!result) return;
 
+    const themeNames = getThemeNames();
+    const themeEmojis = getThemeEmojis();
+
     if (result.correct) { playCorrect(); createConfetti(60); }
     else { playWrong(); }
 
     document.getElementById('result-title').textContent =
-        result.correct ? '\u{2705} Mantri was RIGHT!' : '\u{274C} Mantri was WRONG!';
+        result.correct ? '\u{2705} ' + themeNames[1] + ' was RIGHT!' : '\u{274C} ' + themeNames[1] + ' was WRONG!';
     document.getElementById('result-title').style.color = result.correct ? '#4caf50' : '#f44336';
     document.getElementById('result-emoji').textContent = result.correct ? '\u{1F389}' : '\u{1F625}';
-
-    const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
-    const details = document.getElementById('result-details');
-    const roleData = result.roles || [];
-    details.innerHTML = roleData.map(r =>
-        '<div class="role-reveal"><span>' + icons[r.roleIndex] + ' ' + r.name +
-        '</span><span><strong>' + r.role + '</strong> (+' + r.roundPoints + ')</span></div>'
-    ).join('');
-
-    if (!result.correct) {
-        details.innerHTML += '<div class="role-reveal" style="background:rgba(244,67,54,0.1);margin-top:8px;">' +
-            '<span>\u{1F6A8} Guessed: <strong>' + result.guessedName + '</strong></span>' +
-            '<span>Chor: <strong>' + result.chorName + '</strong></span></div>';
-    }
 
     const scores = data.scores || [];
     const players = data.players || [];
     const roundPoints = result.roundPoints || [];
 
+    const details = document.getElementById('result-details');
+    const roleData = result.roles || [];
+    details.innerHTML = roleData.map(r => {
+        const pIdx = players.indexOf(r.name);
+        const pa = playerAvatars[pIdx] || {};
+        const avatar = pa.avatar || '';
+        return '<div class="role-reveal"><span>' + (avatar ? avatar : themeEmojis[r.roleIndex]) + ' ' + r.name +
+        '</span><span><strong>' + r.role + '</strong> (+' + r.roundPoints + ')</span></div>';
+    }).join('');
+
+    if (!result.correct) {
+        details.innerHTML += '<div class="role-reveal" style="background:rgba(244,67,54,0.1);margin-top:8px;">' +
+            '<span>\u{1F6A8} Guessed: <strong>' + result.guessedName + '</strong></span>' +
+            '<span>' + themeNames[3] + ': <strong>' + result.chorName + '</strong></span></div>';
+    }
+
     document.getElementById('round-scores').innerHTML =
         '<h3>\u{1F4CA} Scoreboard (Round ' + data.currentRound + '/' + data.totalRounds + ')</h3>' +
         '<table class="score-table"><tr><th>Player</th><th>Round</th><th>Total</th></tr>' +
-        players.map((name, i) =>
-            '<tr><td>' + name + '</td><td class="points-added">+' + (roundPoints[i] || 0) +
-            '</td><td class="score-highlight">' + (scores[i] || 0) + '</td></tr>'
-        ).join('') + '</table>';
+        players.map((name, i) => {
+            const pa = playerAvatars[i] || {};
+            const avatar = pa.avatar || '';
+            return '<tr><td>' + (avatar ? avatar + ' ' : '') + name + '</td><td class="points-added">+' + (roundPoints[i] || 0) +
+            '</td><td class="score-highlight">' + (scores[i] || 0) + '</td></tr>';
+        }).join('') + '</table>';
 
     const nextBtn = document.getElementById('next-round-btn');
     const waitMsg = document.getElementById('result-wait');
@@ -663,20 +772,29 @@ function handleGameOver(data) {
 
     const standings = data.standings || [];
     const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}', '\u{1F3C5}'];
+    const players = data.players || [];
+
+    // Find winner avatar
+    const winnerIdx = players.indexOf(standings[0].name);
+    const winnerPa = playerAvatars[winnerIdx] || {};
+    const winnerAvatar = winnerPa.avatar || '\u{1F3C6}';
 
     document.getElementById('winner-announce').innerHTML =
-        '<span class="trophy">\u{1F3C6}</span>' +
+        '<span class="trophy">' + winnerAvatar + '</span>' +
         '<p class="winner-name">' + standings[0].name + ' Wins!</p>' +
         '<p class="winner-score">Score: ' + standings[0].score + ' points</p>';
 
     document.getElementById('final-scores').innerHTML =
         '<h3>Final Standings</h3>' +
-        standings.map((p, i) =>
-            '<div class="final-player ' + (i === 0 ? 'winner' : '') + '">' +
+        standings.map((p, i) => {
+            const pIdx = players.indexOf(p.name);
+            const pa = playerAvatars[pIdx] || {};
+            const avatar = pa.avatar || '';
+            return '<div class="final-player ' + (i === 0 ? 'winner' : '') + '">' +
             '<span class="final-rank">' + medals[i] + '</span>' +
-            '<span class="final-name">' + p.name + '</span>' +
-            '<span class="final-score">' + p.score + '</span></div>'
-        ).join('');
+            '<span class="final-name">' + (avatar ? avatar + ' ' : '') + p.name + '</span>' +
+            '<span class="final-score">' + p.score + '</span></div>';
+        }).join('');
 
     document.getElementById('play-again-btn').classList.toggle('hidden', !isHost);
     showScreen('final-screen');
@@ -756,19 +874,22 @@ function hostListenGuess() {
             const mantriIdx = roles.indexOf(1);
             const correct = guessIndex === chorIdx;
 
-            const pointValues = [1000, 800, 600, 0];
+            // Use custom points from room data
+            const pointValues = data.customPoints || [1000, 800, 600, 0];
             let roundPoints = [0, 0, 0, 0];
             for (let i = 0; i < 4; i++) {
                 roundPoints[i] = pointValues[roles[i]];
             }
             if (!correct) {
                 roundPoints[mantriIdx] = 0;
-                roundPoints[chorIdx] = 800;
+                roundPoints[chorIdx] = pointValues[1]; // Chor gets Mantri's points
             }
 
             const newScores = scores.map((s, i) => s + roundPoints[i]);
 
-            const roleNames = ['Raja', 'Mantri', 'Sipahi', 'Chor'];
+            // Use theme names from room data
+            const theme = data.theme || 'classic';
+            const roleNames = THEMES[theme] ? THEMES[theme].names : THEMES.classic.names;
             const guessResult = {
                 correct,
                 guessedIndex: guessIndex,
@@ -839,7 +960,7 @@ document.getElementById('start-game-btn').addEventListener('click', () => {
 document.getElementById('reveal-btn').addEventListener('click', () => {
     if (!window._myRole) return;
     playReveal();
-    const icons = ['\u{1F451}', '\u{1F9D4}', '\u{1F46E}', '\u{1F412}'];
+    const icons = getThemeEmojis();
     document.getElementById('role-icon').textContent = icons[window._myRole.role];
     document.getElementById('role-name').textContent = window._myRole.roleName;
     document.getElementById('role-points').textContent = window._myRole.points + ' points';
@@ -894,9 +1015,12 @@ document.getElementById('play-again-btn').addEventListener('click', () => {
         revealedCount: 0,
         guess: null,
         guessResult: null,
-        standings: null
+        standings: null,
+        lastActivity: firebase.database.ServerValue.TIMESTAMP
     });
     lastPhase = '';
+    // Re-save session for play again
+    saveSession();
 });
 
 // ====== DELETE ROOM (host only, after game ends) ======
@@ -948,13 +1072,16 @@ function updateLiveScoreboard(players, scores) {
     const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}', '4️⃣'];
 
     const container = document.getElementById('scoreboard-players');
-    container.innerHTML = sorted.map((p, i) =>
-        '<div class="scoreboard-row ' + (p.score > 0 && p.score === maxScore ? 'leading' : '') + '">' +
+    container.innerHTML = sorted.map((p, i) => {
+        const pa = playerAvatars[p.index] || {};
+        const avatar = pa.avatar || '';
+        return '<div class="scoreboard-row ' + (p.score > 0 && p.score === maxScore ? 'leading' : '') + '">' +
             '<span class="sb-rank">' + medals[i] + '</span>' +
+            (avatar ? '<span class="sb-avatar">' + avatar + '</span>' : '') +
             '<span class="sb-name">' + p.name + (p.index === myIndex ? ' (You)' : '') + '</span>' +
             '<span class="sb-score">' + p.score + '</span>' +
-        '</div>'
-    ).join('');
+        '</div>';
+    }).join('');
 }
 
 document.getElementById('scoreboard-toggle').addEventListener('click', () => {
@@ -1001,9 +1128,18 @@ function initChat() {
 function appendChatMessage(msg) {
     const container = document.getElementById('chat-messages');
     const isMine = msg.name === myName;
+    // Find player avatar by name
+    let avatar = '';
+    const msgPlayerIdx = currentPlayers.indexOf(msg.name);
+    if (msgPlayerIdx >= 0) {
+        const pa = playerAvatars[msgPlayerIdx] || {};
+        avatar = pa.avatar || '';
+    }
+
     const div = document.createElement('div');
     div.className = 'chat-msg' + (isMine ? ' mine' : '');
-    div.innerHTML = '<div class="chat-msg-name">' + msg.name + '</div>' +
+    div.innerHTML = (avatar ? '<span class="chat-msg-avatar">' + avatar + '</span>' : '') +
+        '<div class="chat-msg-name">' + msg.name + '</div>' +
         '<div class="chat-msg-text">' + escapeHtml(msg.text) + '</div>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
@@ -1334,6 +1470,29 @@ document.getElementById('share-invite-btn').addEventListener('click', () => {
         // Fallback to copy
         document.getElementById('copy-invite-btn').click();
     }
+});
+
+// ====== SETTINGS: THEME UPDATES POINTS EMOJIS ======
+document.querySelectorAll('input[name="game-theme"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        const theme = radio.value;
+        const emojis = THEMES[theme] ? THEMES[theme].emojis : THEMES.classic.emojis;
+        const names = THEMES[theme] ? THEMES[theme].names : THEMES.classic.names;
+        const pointEmojis = document.querySelectorAll('.points-input-group .points-emoji');
+        const pointLabels = document.querySelectorAll('.points-input-group .points-label');
+        if (pointEmojis.length === 4) {
+            pointEmojis[0].textContent = emojis[0];
+            pointEmojis[1].textContent = emojis[1];
+            pointEmojis[2].textContent = emojis[2];
+            pointEmojis[3].textContent = emojis[3];
+        }
+        if (pointLabels.length === 4) {
+            pointLabels[0].textContent = names[0];
+            pointLabels[1].textContent = names[1];
+            pointLabels[2].textContent = names[2];
+            pointLabels[3].textContent = names[3];
+        }
+    });
 });
 
 // Check invite link on page load

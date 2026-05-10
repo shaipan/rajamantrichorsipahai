@@ -43,6 +43,31 @@
                     <span class="input-icon">&#128100;</span>
                     <input type="text" id="player-name" placeholder="Your Name" maxlength="15">
                 </div>
+
+                <!-- Avatar Picker -->
+                <p class="picker-label">Pick Your Avatar</p>
+                <div class="avatar-picker">
+                    <label><input type="radio" name="avatar" value="🧑" checked><span class="avatar-option">🧑</span></label>
+                    <label><input type="radio" name="avatar" value="👦"><span class="avatar-option">👦</span></label>
+                    <label><input type="radio" name="avatar" value="👧"><span class="avatar-option">👧</span></label>
+                    <label><input type="radio" name="avatar" value="🧒"><span class="avatar-option">🧒</span></label>
+                    <label><input type="radio" name="avatar" value="👨"><span class="avatar-option">👨</span></label>
+                    <label><input type="radio" name="avatar" value="👩"><span class="avatar-option">👩</span></label>
+                    <label><input type="radio" name="avatar" value="🦸"><span class="avatar-option">🦸</span></label>
+                    <label><input type="radio" name="avatar" value="🧙"><span class="avatar-option">🧙</span></label>
+                </div>
+
+                <!-- Color Picker -->
+                <p class="picker-label">Pick Your Color</p>
+                <div class="color-picker">
+                    <label><input type="radio" name="player-color" value="red" checked><span class="color-dot color-red"></span></label>
+                    <label><input type="radio" name="player-color" value="blue"><span class="color-dot color-blue"></span></label>
+                    <label><input type="radio" name="player-color" value="green"><span class="color-dot color-green"></span></label>
+                    <label><input type="radio" name="player-color" value="purple"><span class="color-dot color-purple"></span></label>
+                    <label><input type="radio" name="player-color" value="orange"><span class="color-dot color-orange"></span></label>
+                    <label><input type="radio" name="player-color" value="pink"><span class="color-dot color-pink"></span></label>
+                </div>
+
                 <button id="create-btn" class="btn primary pulse-btn">&#127881; Create Room</button>
                 <div class="divider"><span>OR JOIN</span></div>
                 <div id="open-rooms" class="open-rooms">
@@ -73,6 +98,104 @@
                     &#127920; Number of Rounds:
                     <input type="number" id="total-rounds" value="5" min="1" max="20">
                 </label>
+
+                <!-- Theme Picker -->
+                <div class="setting-section">
+                    <div class="setting-section-title">&#127917; Theme</div>
+                    <div class="theme-options">
+                        <label class="theme-option">
+                            <input type="radio" name="game-theme" value="classic" checked>
+                            <div class="theme-card">
+                                <span class="theme-card-emoji">👑🧔👮🐒</span>
+                                <span class="theme-card-name">Classic</span>
+                            </div>
+                        </label>
+                        <label class="theme-option">
+                            <input type="radio" name="game-theme" value="bollywood">
+                            <div class="theme-card">
+                                <span class="theme-card-emoji">🎬⭐😈🎭</span>
+                                <span class="theme-card-name">Bollywood</span>
+                            </div>
+                        </label>
+                        <label class="theme-option">
+                            <input type="radio" name="game-theme" value="cricket">
+                            <div class="theme-card">
+                                <span class="theme-card-emoji">🏏🎯🏐🦆</span>
+                                <span class="theme-card-name">Cricket</span>
+                            </div>
+                        </label>
+                        <label class="theme-option">
+                            <input type="radio" name="game-theme" value="school">
+                            <div class="theme-card">
+                                <span class="theme-card-emoji">🏫📚✋🏃</span>
+                                <span class="theme-card-name">School</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Custom Points -->
+                <div class="setting-section">
+                    <div class="setting-section-title">&#128176; Custom Points</div>
+                    <div class="points-inputs">
+                        <div class="points-input-group">
+                            <span class="points-emoji">👑</span>
+                            <span class="points-label">Raja</span>
+                            <input type="number" id="points-raja" value="1000" min="0" max="9999">
+                        </div>
+                        <div class="points-input-group">
+                            <span class="points-emoji">🧔</span>
+                            <span class="points-label">Mantri</span>
+                            <input type="number" id="points-mantri" value="800" min="0" max="9999">
+                        </div>
+                        <div class="points-input-group">
+                            <span class="points-emoji">👮</span>
+                            <span class="points-label">Sipahi</span>
+                            <input type="number" id="points-sipahi" value="600" min="0" max="9999">
+                        </div>
+                        <div class="points-input-group">
+                            <span class="points-emoji">🐒</span>
+                            <span class="points-label">Chor</span>
+                            <input type="number" id="points-chor" value="0" min="0" max="9999">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Vibe Picker -->
+                <div class="setting-section">
+                    <div class="setting-section-title">&#127912; Room Vibe</div>
+                    <div class="vibe-options">
+                        <label class="vibe-option">
+                            <input type="radio" name="room-vibe" value="space" checked>
+                            <div class="vibe-card">
+                                <div class="vibe-card-preview vibe-preview-space"></div>
+                                <span class="vibe-card-name">Space</span>
+                            </div>
+                        </label>
+                        <label class="vibe-option">
+                            <input type="radio" name="room-vibe" value="palace">
+                            <div class="vibe-card">
+                                <div class="vibe-card-preview vibe-preview-palace"></div>
+                                <span class="vibe-card-name">Palace</span>
+                            </div>
+                        </label>
+                        <label class="vibe-option">
+                            <input type="radio" name="room-vibe" value="jungle">
+                            <div class="vibe-card">
+                                <div class="vibe-card-preview vibe-preview-jungle"></div>
+                                <span class="vibe-card-name">Jungle</span>
+                            </div>
+                        </label>
+                        <label class="vibe-option">
+                            <input type="radio" name="room-vibe" value="ocean">
+                            <div class="vibe-card">
+                                <div class="vibe-card-preview vibe-preview-ocean"></div>
+                                <span class="vibe-card-name">Ocean</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <button id="create-confirm-btn" class="btn primary">&#10004; Create Room</button>
             </div>
         </div>
