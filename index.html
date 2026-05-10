@@ -95,6 +95,17 @@
             <button id="start-game-btn" class="btn primary pulse-btn hidden">&#127922; Start Game!</button>
         </div>
 
+        <!-- Live Scoreboard (visible during game) -->
+        <div id="live-scoreboard" class="live-scoreboard hidden">
+            <div id="scoreboard-toggle" class="scoreboard-toggle">
+                <span>&#128200; Scores</span>
+                <span id="scoreboard-arrow" class="scoreboard-arrow">&#9660;</span>
+            </div>
+            <div id="scoreboard-content" class="scoreboard-content hidden">
+                <div id="scoreboard-players" class="scoreboard-players"></div>
+            </div>
+        </div>
+
         <!-- Waiting Screen -->
         <div id="waiting-screen" class="screen">
             <h2 id="waiting-title">Waiting...</h2>

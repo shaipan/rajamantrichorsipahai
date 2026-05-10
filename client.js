@@ -245,8 +245,8 @@ connInfo.on('value', (snap) => {
 
 // ====== CLEANUP OLD ROOMS ======
 function cleanupOldRooms() {
-    const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
-    db.ref('rooms').orderByChild('timestamp').endAt(twoHoursAgo).once('value').then((snap) => {
+    const thirtyMinAgo = Date.now() - (30 * 60 * 1000);
+    db.ref('rooms').orderByChild('lastActivity').endAt(thirtyMinAgo).once('value').then((snap) => {
         const updates = {};
         snap.forEach((child) => {
             updates[child.key] = null;
@@ -255,6 +255,22 @@ function cleanupOldRooms() {
             db.ref('rooms').update(updates);
         }
     });
+    // Also clean rooms without lastActivity (old format) older than 30 min
+    db.ref('rooms').orderByChild('timestamp').endAt(thirtyMinAgo).once('value').then((snap) => {
+        const updates = {};
+        snap.forEach((child) => {
+            updates[child.key] = null;
+        });
+        if (Object.keys(updates).length > 0) {
+            db.ref('rooms').update(updates);
+        }
+    });
+}
+
+function touchActivity() {
+    if (roomRef) {
+        roomRef.child('lastActivity').set(firebase.database.ServerValue.TIMESTAMP);
+    }
 }
 
 // ====== CREATE ROOM ======
@@ -275,7 +291,8 @@ function createRoom() {
         revealedCount: 0,
         guessResult: null,
         standings: null,
-        timestamp: firebase.database.ServerValue.TIMESTAMP
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        lastActivity: firebase.database.ServerValue.TIMESTAMP
     }).then(() => {
         myIndex = 0;
         isHost = true;
@@ -344,6 +361,7 @@ function joinRoom(code) {
             playJoin();
             listenToRoom();
             saveSession();
+            touchActivity();
         });
     }).catch(() => {
         showScreen('home-screen');
@@ -400,6 +418,14 @@ function handleRoomUpdate(data) {
     if (phase !== 'mantri-guess') {
         clearMantriTimer();
         if (waitingTimerInterval) { clearInterval(waitingTimerInterval); waitingTimerInterval = null; }
+    }
+
+    // Live scoreboard: show during active game, hide in lobby/home/game-over
+    if (phase === 'lobby' || phase === 'game-over') {
+        hideLiveScoreboard();
+    } else {
+        showLiveScoreboard();
+        updateLiveScoreboard(players, data.scores);
     }
 
     switch (phase) {
@@ -687,7 +713,8 @@ function hostStartRound() {
             revealedCount: 0,
             guess: null,
             guessResult: null,
-            standings: null
+            standings: null,
+            lastActivity: firebase.database.ServerValue.TIMESTAMP
         });
     });
 }
@@ -764,16 +791,6 @@ function hostListenGuess() {
                 phase: 'result',
                 guess: null
             });
-
-            // Check game over
-            if (data.currentRound >= data.totalRounds) {
-                setTimeout(() => {
-                    const standings = players
-                        .map((name, i) => ({ name, score: newScores[i] }))
-                        .sort((a, b) => b.score - a.score);
-                    roomRef.update({ phase: 'game-over', standings });
-                }, 1500);
-            }
         });
     });
 }
@@ -833,6 +850,7 @@ document.getElementById('reveal-btn').addEventListener('click', () => {
 
 document.getElementById('reveal-done-btn').addEventListener('click', () => {
     playClick();
+    touchActivity();
     // Increment revealedCount and move to next player
     roomRef.transaction((data) => {
         if (data) {
@@ -906,6 +924,43 @@ document.getElementById('player-name').addEventListener('keydown', (e) => {
 
 document.getElementById('room-code').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('join-btn').click();
+});
+
+// ====== LIVE SCOREBOARD ======
+let scoreboardVisible = false;
+
+function showLiveScoreboard() {
+    document.getElementById('live-scoreboard').classList.remove('hidden');
+}
+
+function hideLiveScoreboard() {
+    document.getElementById('live-scoreboard').classList.add('hidden');
+}
+
+function updateLiveScoreboard(players, scores) {
+    if (!players || !scores) return;
+
+    const sorted = players
+        .map((name, i) => ({ name, score: scores[i] || 0, index: i }))
+        .sort((a, b) => b.score - a.score);
+
+    const maxScore = sorted[0] ? sorted[0].score : 0;
+    const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}', '4️⃣'];
+
+    const container = document.getElementById('scoreboard-players');
+    container.innerHTML = sorted.map((p, i) =>
+        '<div class="scoreboard-row ' + (p.score > 0 && p.score === maxScore ? 'leading' : '') + '">' +
+            '<span class="sb-rank">' + medals[i] + '</span>' +
+            '<span class="sb-name">' + p.name + (p.index === myIndex ? ' (You)' : '') + '</span>' +
+            '<span class="sb-score">' + p.score + '</span>' +
+        '</div>'
+    ).join('');
+}
+
+document.getElementById('scoreboard-toggle').addEventListener('click', () => {
+    scoreboardVisible = !scoreboardVisible;
+    document.getElementById('scoreboard-content').classList.toggle('hidden', !scoreboardVisible);
+    document.getElementById('scoreboard-arrow').classList.toggle('open', scoreboardVisible);
 });
 
 // ====== CHAT SYSTEM ======
@@ -1063,10 +1118,12 @@ function loadOpenRooms() {
     });
 }
 
-// Load rooms on page load and refresh button
+// Cleanup stale rooms on page load, then load open rooms
+cleanupOldRooms();
 loadOpenRooms();
 document.getElementById('refresh-rooms-btn').addEventListener('click', () => {
     playClick();
+    cleanupOldRooms();
     loadOpenRooms();
 });
 
